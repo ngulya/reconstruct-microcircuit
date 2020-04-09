@@ -14,6 +14,9 @@ from filecmp import dircmp
 import copy
 import time
 from scipy.spatial import distance
+import random as rnd
+
+rnd.seed(13)
 
 # from neuron.units import ms, mV
 # import neurom
@@ -240,12 +243,11 @@ def load_neurons(template_cell_ids):
 		alls -= 1
 	return cells
 
-def run_vasya_run(tstop):
-	tstop = 100
+def run_run_run(tstop):
 	print(f'\n\nRunning for {tstop} ms')
 	tstart = time.time()
 	leftsec = tstop
-	num_windows = max([int(float(tstop)/50), 100])
+	num_windows = max([int(float(tstop)/50), 10])
 	windows = numpy.linspace(0,tstop,num_windows)
 
 	for iround, neuron.h.tstop in enumerate(windows[1:]):
@@ -254,8 +256,8 @@ def run_vasya_run(tstop):
 			neuron.h.run()
 		else:
 			neuron.h.continuerun(neuron.h.tstop)
-			tspent = time.time() - tstart
-			leftsec = numpy.round(tspent*(tstop-neuron.h.tstop)/neuron.h.tstop, 1)
+		tspent = time.time() - tstart
+		leftsec = numpy.round(tspent*(tstop-neuron.h.tstop)/neuron.h.tstop, 1)
 
 	print(f'\rElapsed time {numpy.round(time.time() - tstart, 2)} sec .......')
 	# exit()
@@ -263,56 +265,64 @@ def get_section_xyz_d(section, loc=0.5):
 	loc = int(loc* section.n3d())
 	return [section.x3d(loc), section.y3d(loc), section.z3d(loc), section.diam3d(loc)]
 
+def connect_neurons(cells, template_cell_ids, syn_pre_cell_type):
+	#[L4_BP_bAC217_2[0], L5_BP_bAC217_3[0], L1_DAC_cNAC187_3[0], L23_BP_bNAC219_3[0], L6_BP_bAC217_3[0]]
+	netcons = []
+	def get_short_inf(inf, s_list):
+		d = {'L1':0, 'L23':0,'L4':0,'L5':0,'L6':0}
+		for syn in s_list:
+			l = inf[int(syn.synapseID)].split('_')[0]
+			d[l] += 1
+		return d
 
-def connect_2_neurons(cells, syn_pre_cell_type):
-	target = cells[0]#target
-	source = cells[1]#source
-	our_synapses = []
-	for syn_num, syn_pre_type in syn_pre_cell_type[0].items():
-		if syn_pre_type.startswith('L1'):
-			our_synapses.append(syn_num)
-	
-	####### for sec in source.soma[0].wholetree():
-	####### 	sec.nseg = 1
-	####### for sec in target.soma[0].wholetree():
-	####### 	sec.nseg = 1
-	
-	
-	dist = []
-	vol = []
-	for i in range(0, 50, 10):
-		dist.append(distance.euclidean(get_section_xyz_d(source.soma[0])[:3], get_section_xyz_d(source.axon[i])[:3]))
-		vol.append(neuron.h.Vector().record(source.axon[i](0.5)._ref_v))
-	
-	iclamp = neuron.h.IClamp(source.soma[0](0.5))
+	for num_t, target in enumerate(cells):
+		_inf = get_short_inf(syn_pre_cell_type[num_t], target.synapses.synapse_list)
+		print('postsyn:', target, '	num pre syn:', len(target.synapses.synapse_list), _inf)
+		for num_s, source in enumerate(cells):
+			if target == source:
+				continue
+			print('	presyn:', source, end = '->	')
+			max_axon = len(source.axon) - 1
+			layer_source = template_cell_ids[num_s].split('_')[0]
+			info_for_target = syn_pre_cell_type[num_t]
+			_cnt = 0
+			
+			for syn in target.synapses.synapse_list:
+				could_be_pre_type = info_for_target[int(syn.synapseID)]
+				pre_layer = could_be_pre_type.split('_')[0]
+				if pre_layer == layer_source:
+					print(could_be_pre_type, end=' ')
+					if _cnt > 15:
+						_cnt = 0
+						print('\n			', end='')
+					axon_pos = rnd.randint(0, max_axon)
+					nc = neuron.h.NetCon(source.axon[axon_pos](0.5)._ref_v, syn, sec=source.axon[axon_pos])
+					nc.weight[0] = 0.05
+					nc.delay = 1
+					netcons.append(nc)
+					_cnt += 1
+			print()
+		print('all presyn connected to postsyn:', target, end='\n\n')
+
+	iclamp = neuron.h.IClamp(cells[3].soma[0](0.5))
 	iclamp.delay = 100
 	iclamp.dur = 300
 	iclamp.amp = 0.1
 
-	source_v = neuron.h.Vector().record(source.soma[0](0.5)._ref_v)
-	source_axon_v = neuron.h.Vector().record(source.axon[10](0.5)._ref_v)
+	list_v = []
+	for cell in cells:
+		list_v.append(neuron.h.Vector().record(cell.soma[0](0.5)._ref_v))
 
-	target_v = neuron.h.Vector().record(target.soma[0](0.5)._ref_v)
 	time_v = neuron.h.Vector().record(neuron.h._ref_t)
 
-	# netcons = []
-	# for syn in target.synapses.synapse_list:
-	# 	if syn.synapseID in our_synapses:
-	# 		if not 'ProbAMPANMDA_EMS' in str(syn):
-	# 			continue
-	# 		print(syn)
-	# 		nc = neuron.h.NetCon(source.axon[10](0.5)._ref_v, syn, sec=source.axon[10])
-	# 		nc.weight[0] = 0.05
-	# 		nc.delay = 1
-	# 		netcons.append(nc)
-	run_vasya_run(100.0)
-	# plt.plot(time_v, source_v, label = 'source_v')
-	for i in range(len(dist)):
-		if i in [4,5]:
-			plt.plot(time_v, vol[i], label = f'd:{dist[i]}')
 
-	# plt.plot(time_v, source_axon_v, label = 'source_axon_v')
-	# plt.plot(time_v, target_v, label = 'target_v')
+	run_run_run(600.0)
+	for i in range(len(cells)):
+		label = str(cells[i])
+		if i == 3:
+			label = 'Main: ' + label
+		plt.plot(time_v, list_v[i], label = label)
+	
 	plt.legend()
 	plt.show()
 
@@ -344,7 +354,7 @@ def change_ion_conc(cells, syn_pre_cell_type):
 	source_axon_v = neuron.h.Vector().record(source.axon[0](0.5)._ref_v)
 	time_v = neuron.h.Vector().record(neuron.h._ref_t)
 
-	run_vasya_run(700.0)
+	run_run_run(700.0)
 
 	# plt.plot(time_v, source_axon_v, label = 'source_axon_v')
 	plt.plot(time_v, source_v, label = 'source_v')
@@ -358,30 +368,23 @@ def change_ion_conc(cells, syn_pre_cell_type):
 
 if __name__ == '__main__':
 	opj = os.path.join
-	
 	# load_neurons_data(circuit_folders=['AllLayers/L1', 'AllLayers/L23', 'AllLayers/L4', 'AllLayers/L5', 'AllLayers/L6'])
 	# load_neurons_data(circuit_folders=['AllLayers/L1'])
-	load_neurons_data()
-	# # # os.system("nrnivmodl mechanisms")
+	
+	# load_neurons_data()
+	# os.system("nrnivmodl mechanisms")
 	# exit('=')
 
 	template_cell_ids, syn_pre_cell_type, dict_with_info = get_lists()
 	print(template_cell_ids)
-
 	# with open('synapse_info.json', 'w') as outfile:
 	# 	json.dump(dict_with_info, outfile)
 	# exit()
 	cells = load_neurons(template_cell_ids)
-	plotting(cells)
-	
-	# for i in range(len(template_paths)):
-	# 	print(template_paths[i])
-	# 	print('	', syn_pre_cell_type[i])
-	# 	print()
-	# exit()
+	# plotting(cells)
 	
 	# change_ion_conc(cells, syn_pre_cell_type)
-	# connect_2_neurons(cells, syn_pre_cell_type)
+	connect_neurons(cells, template_cell_ids, syn_pre_cell_type)
 
 
 
