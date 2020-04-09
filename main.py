@@ -23,6 +23,12 @@ from scipy.spatial import distance
 #############clear; nrniv -pyexe pyexe run.py 
 
 def plotting(cells, additional=[], ids=[]):
+	###change cooord
+	# for num, c in enumerate(cells):
+	# 	for sec in c.soma[0].wholetree():
+	# 		for i in range(sec.n3d()):
+	# 			sec.pt3dchange(i,num*1000 + sec.x3d(i),num*1000 + sec.y3d(i),num*1000 + sec.z3d(i),sec.diam3d(i))
+	
 	fig = plt.figure()
 	ax = plt.axes(projection='3d')
 	for num_cell, cell in enumerate(cells):
@@ -40,9 +46,9 @@ def plotting(cells, additional=[], ids=[]):
 			diam = 0
 			for i in range(sec.n3d()):
 				print(sec.x3d(i), sec.y3d(i), sec.z3d(i), sec.diam3d(i))
-				x.append(sec.x3d(i) + num_cell*1000)
-				y.append(sec.y3d(i) + num_cell*1000)
-				z.append(sec.z3d(i) + num_cell*1000)
+				x.append(sec.x3d(i) + num_cell*1)
+				y.append(sec.y3d(i) + num_cell*1)
+				z.append(sec.z3d(i) + num_cell*1)
 				diam = sec.diam3d(i)
 			# ax.plot3D(x, y, z, label=f'{sec}', linewidth=diam)
 			ax.plot3D(x, y, z, color=color, linewidth=diam)
@@ -53,7 +59,7 @@ def plotting(cells, additional=[], ids=[]):
 	plt.show()
 
 def get_synapses_pre_mtypes(filename):
-	d_mtype_map, d_synapses = {}, {}
+	d_mtype_map, d_synapses, d_type_synapses = {}, {}, {}
 
 	with open(opj(filename, 'mtype_map.tsv'), 'r') as fd:
 		mtype_map = fd.read().split('\n')
@@ -62,6 +68,7 @@ def get_synapses_pre_mtypes(filename):
 			if len(line) > 1:
 				d_mtype_map[int(line[0])] = line[1]
 	
+	d_num_mtypes_synapses = {}
 	with open(opj(filename, 'synapses.tsv'), 'r') as fd:
 		synapses = fd.read().split('\n')
 		for line in synapses[1:]:
@@ -69,8 +76,19 @@ def get_synapses_pre_mtypes(filename):
 			if len(line) > 1:
 				synapse_id = int(line[0])
 				pre_mtype = int(line[2])
-				d_synapses[synapse_id] = d_mtype_map[pre_mtype]
-	return d_synapses
+				#If synapse_type < 100 the synapse is inhibitory, otherwise excitatory
+				syn_pre_type = int(line[6])
+				excitatory = 1
+				if syn_pre_type < 100:
+					excitatory = 0
+				
+				str_mtype = d_mtype_map[pre_mtype]
+				d_synapses[synapse_id] = str_mtype
+				d_type_synapses[synapse_id] = excitatory
+				d_num_mtypes_synapses.setdefault(str_mtype, 0)
+				d_num_mtypes_synapses[str_mtype] += 1
+
+	return d_num_mtypes_synapses, d_synapses, d_type_synapses
 
 
 
@@ -112,110 +130,124 @@ def change_axons_settings(filename):
 			print(line, end='')
 	return 1
 
-def load_neurons_data(file_loc, circuit_folder='MyLayers'):
+def load_neurons_data(circuit_folders=['MyLayers']):
+	file_loc = os.path.dirname(os.path.abspath(__file__))
+	
 	for folder in ['synapses', 'morphology', 'biophysics', 'template']:
 		shutil.rmtree(folder, ignore_errors=True)
 		os.makedirs(folder, exist_ok=True)
 	shutil.rmtree('mechanisms', ignore_errors=True)
 	
 	have_mechanisms = False
-	neuron_folders = get_neurons_path(circuit_folder)
-	for cell_id in neuron_folders:
-		print(cell_id)
-		folder = opj(circuit_folder, cell_id)
-		with open(opj(folder, 'cellinfo.json'), 'r') as fd:
-			cell_info = json.load(fd)
-		biophysic_old_name = cell_info["cell name"].split('_')[0] + '_biophys'
-		biophysic_new_name = cell_id + '_biophys'
-		synapse_new_name = 'synapses_' + cell_id
-		morphology_new_name = 'morphology_' + cell_id
+	neuron_parent_folders = []
+	for folder in circuit_folders:
+		neuron_parent_folders.append(get_neurons_path(folder))
 
-		biophysics_hoc_old = opj(folder, 'biophysics.hoc')
-		biophysics_hoc_new = opj('biophysics', f'{cell_id}.hoc')
-		shutil.copy(biophysics_hoc_old, biophysics_hoc_new)
-		change_template_name(biophysics_hoc_new, biophysic_old_name, biophysic_new_name)
+	for _num_fold, neuron_folders in enumerate(neuron_parent_folders):
+		for cell_id in neuron_folders:
+			print(cell_id)
+			folder = opj(circuit_folders[_num_fold], cell_id)
+			with open(opj(folder, 'cellinfo.json'), 'r') as fd:
+				cell_info = json.load(fd)
+			cell_id = cell_id.replace('-', '_')
+			biophysic_old_name = cell_info["cell name"].split('_')[0] + '_biophys'
+			biophysic_new_name = cell_id + '_biophys'
+			synapse_new_name = 'synapses_' + cell_id
+			morphology_new_name = 'morphology_' + cell_id
+
+			biophysics_hoc_old = opj(folder, 'biophysics.hoc')
+			biophysics_hoc_new = opj('biophysics', f'{cell_id}.hoc')
+			shutil.copy(biophysics_hoc_old, biophysics_hoc_new)
+			change_template_name(biophysics_hoc_new, biophysic_old_name, biophysic_new_name)
 
 
-		morphology_old = opj(folder, 'morphology')
-		morphology_new = opj('morphology', cell_id)
-		shutil.copytree(morphology_old, morphology_new)
+			morphology_old = opj(folder, 'morphology')
+			morphology_new = opj('morphology', cell_id)
+			shutil.copytree(morphology_old, morphology_new)
 
-		morphology_hoc_old = opj(folder, 'morphology.hoc')
-		morphology_hoc_new = opj(morphology_new, 'morphology.hoc')
-		shutil.copy(morphology_hoc_old, morphology_hoc_new)
-		change_str_in_hoc(opj(morphology_new, 'morphology.hoc'), 'morphology/', opj(file_loc, morphology_new+'/'))
-		morphology_old_name = change_template_name(morphology_hoc_new, None, morphology_new_name, False)
+			morphology_hoc_old = opj(folder, 'morphology.hoc')
+			morphology_hoc_new = opj(morphology_new, 'morphology.hoc')
+			shutil.copy(morphology_hoc_old, morphology_hoc_new)
+			change_str_in_hoc(opj(morphology_new, 'morphology.hoc'), 'morphology/', opj(file_loc, morphology_new+'/'))
+			morphology_old_name = change_template_name(morphology_hoc_new, None, morphology_new_name, False)
 
-		synapses_old = opj(folder, 'synapses')
-		synapses_new = opj('synapses', cell_id)
-		shutil.copytree(synapses_old, synapses_new)
-		
-		change_str_in_hoc(opj(synapses_new, 'synapses.hoc'), 'synapses/', opj(file_loc, synapses_new+'/'))
-		change_str_in_hoc(opj(synapses_new, 'synapses.hoc'), 'synapse_list.append(synapse)', 'synapse.synapseID = synapse_id\nsynapse_list.append(synapse)')
-		synapse_old_name = change_template_name(opj(synapses_new, 'synapses.hoc'), None, synapse_new_name, False)
-		
-		template_hoc_old = opj(folder, 'template.hoc')
-		template_hoc_new = opj('template', f'{cell_id}.hoc')
-		shutil.copy(template_hoc_old, template_hoc_new)
-		change_str_in_hoc(template_hoc_new, 'morphology.hoc', opj(file_loc, morphology_hoc_new))
-		change_str_in_hoc(template_hoc_new, 'biophysics.hoc', opj(file_loc, biophysics_hoc_new))
-		change_str_in_hoc(template_hoc_new, 'synapses/synapses.hoc', opj(file_loc, synapses_new, 'synapses.hoc'))
+			synapses_old = opj(folder, 'synapses')
+			synapses_new = opj('synapses', cell_id)
+			shutil.copytree(synapses_old, synapses_new)
+			
+			change_str_in_hoc(opj(synapses_new, 'synapses.hoc'), 'synapses/', opj(file_loc, synapses_new+'/'))
+			change_str_in_hoc(opj(synapses_new, 'synapses.hoc'), 'synapse_list.append(synapse)', 'synapse.synapseID = synapse_id\nsynapse_list.append(synapse)')
+			synapse_old_name = change_template_name(opj(synapses_new, 'synapses.hoc'), None, synapse_new_name, False)
+			
+			template_hoc_old = opj(folder, 'template.hoc')
+			template_hoc_new = opj('template', f'{cell_id}.hoc')
+			shutil.copy(template_hoc_old, template_hoc_new)
+			change_str_in_hoc(template_hoc_new, 'morphology.hoc', opj(file_loc, morphology_hoc_new))
+			change_str_in_hoc(template_hoc_new, 'biophysics.hoc', opj(file_loc, biophysics_hoc_new))
+			change_str_in_hoc(template_hoc_new, 'synapses/synapses.hoc', opj(file_loc, synapses_new, 'synapses.hoc'))
 
-		#change template names in addition mechs
-		change_str_in_hoc(template_hoc_new, biophysic_old_name, biophysic_new_name)
-		change_str_in_hoc(template_hoc_new, synapse_old_name, synapse_new_name)
-		change_str_in_hoc(template_hoc_new, morphology_old_name, morphology_new_name)
+			#change template names in addition mechs
+			change_str_in_hoc(template_hoc_new, biophysic_old_name, biophysic_new_name)
+			change_str_in_hoc(template_hoc_new, synapse_old_name, synapse_new_name)
+			change_str_in_hoc(template_hoc_new, morphology_old_name, morphology_new_name)
+			change_template_name(template_hoc_new, None, cell_id, False)
+			change_axons_settings(template_hoc_new)
 
-		change_axons_settings(template_hoc_new)
+			if not have_mechanisms:
+				shutil.copytree(opj(folder, 'mechanisms'), 'mechanisms')
+				have_mechanisms = True
+			else:
+				new_files = dircmp(opj(folder, 'mechanisms'), 'mechanisms').left_only
+				for file in new_files:
+					print('\n\n\n\n\n\n\nnrnivmodl mechanisms')
+					shutil.copy(opj(folder, 'mechanisms', file), opj('mechanisms', file))
 
-		if not have_mechanisms:
-			shutil.copytree(opj(folder, 'mechanisms'), 'mechanisms')
-			have_mechanisms = True
-		else:
-			diff_files = dircmp(opj(folder, 'mechanisms'), 'mechanisms').diff_files
-			if len(diff_files) > 0:
-				exit(f'Some files in {opj(folder, "mechanisms")} differences: {diff_files}')
+				# if len(diff_files) > 0:
+				# 	exit(f'Some files in {opj(folder, "mechanisms")} differences: {diff_files}')
 
 
 	return 1
 
 def get_lists():
-	syn_pre_cell_type, template_cells, template_paths = [], [], []
+	dict_with_info = {}
+	syn_pre_cell_type, template_cell_ids = [], []
 	for _template_paths in os.listdir('template'):
 		if _template_paths.endswith('.hoc'):
 			cell_id = _template_paths.split('.hoc')[0]
-			_template_paths = opj('template', _template_paths)
-			with open(_template_paths, 'r') as fd:
-				for line in fd.read().split('\n'):
-					if line.find('begintemplate') != -1:
-						template_cell = line.split('begintemplate')[1].strip()
-						break
+			dict_with_info[cell_id] = {'num_synapses':0, 'mtype_synapses':{}, 'ie_type_synapses':0}
+			
+			num_mtypes_synapses, mtype_synapses, ie_type_synapses = get_synapses_pre_mtypes(opj('synapses', cell_id))
+			dict_with_info[cell_id]['num_synapses'] = len(mtype_synapses)
+			dict_with_info[cell_id]['num_mtypes_synapses'] = num_mtypes_synapses
+			dict_with_info[cell_id]['mtype_synapses'] = mtype_synapses
+			dict_with_info[cell_id]['ie_type_synapses'] = ie_type_synapses
+			syn_pre_cell_type.append(mtype_synapses)
+			template_cell_ids.append(cell_id)
 
-			syn_pre_cell_type.append(get_synapses_pre_mtypes(opj('synapses', cell_id)))
-			template_paths.append(_template_paths)
-			template_cells.append(template_cell)
-	return template_cells, template_paths, syn_pre_cell_type
+	return template_cell_ids, syn_pre_cell_type, dict_with_info
 
-def load_neurons(template_cells, template_paths):
+def load_neurons(template_cell_ids):
 	neuron.h.load_file("stdrun.hoc")
 	neuron.h.load_file("import3d.hoc")
 
 	cells = []
-	for num_cell in range(len(template_paths)):
-		neuron.h.load_file(template_paths[num_cell])
-		print(template_cells[num_cell])
-		cells.append(getattr(neuron.h, template_cells[num_cell])(1))
-
+	alls = len(template_cell_ids)
+	for cell_id in template_cell_ids:
+	
+		neuron.h.load_file(opj('template', f'{cell_id}.hoc'))
+		print(cell_id, 'left:', alls)
+		cells.append(getattr(neuron.h, cell_id)(1))
+		alls -= 1
 	return cells
 
 def run_vasya_run(tstop):
+	tstop = 100
 	print(f'\n\nRunning for {tstop} ms')
 	tstart = time.time()
 	leftsec = tstop
-	num_windows = max([int(float(tstop)/50), 10])
+	num_windows = max([int(float(tstop)/50), 100])
 	windows = numpy.linspace(0,tstop,num_windows)
 
-	
 	for iround, neuron.h.tstop in enumerate(windows[1:]):
 		print(f'\rLeft {int(tstop-neuron.h.tstop)} ms in simulation || {leftsec} sec', end='    ')
 		if iround == 0:
@@ -226,7 +258,7 @@ def run_vasya_run(tstop):
 			leftsec = numpy.round(tspent*(tstop-neuron.h.tstop)/neuron.h.tstop, 1)
 
 	print(f'\rElapsed time {numpy.round(time.time() - tstart, 2)} sec .......')
-
+	# exit()
 def get_section_xyz_d(section, loc=0.5):
 	loc = int(loc* section.n3d())
 	return [section.x3d(loc), section.y3d(loc), section.z3d(loc), section.diam3d(loc)]
@@ -237,7 +269,7 @@ def connect_2_neurons(cells, syn_pre_cell_type):
 	source = cells[1]#source
 	our_synapses = []
 	for syn_num, syn_pre_type in syn_pre_cell_type[0].items():
-		if syn_pre_type.startswith('L6'):
+		if syn_pre_type.startswith('L1'):
 			our_synapses.append(syn_num)
 	
 	####### for sec in source.soma[0].wholetree():
@@ -248,26 +280,20 @@ def connect_2_neurons(cells, syn_pre_cell_type):
 	
 	dist = []
 	vol = []
-	for i in range(0, 90, 10):
+	for i in range(0, 50, 10):
 		dist.append(distance.euclidean(get_section_xyz_d(source.soma[0])[:3], get_section_xyz_d(source.axon[i])[:3]))
 		vol.append(neuron.h.Vector().record(source.axon[i](0.5)._ref_v))
 	
 	iclamp = neuron.h.IClamp(source.soma[0](0.5))
 	iclamp.delay = 100
 	iclamp.dur = 300
-	iclamp.amp = 0.9
+	iclamp.amp = 0.1
 
 	source_v = neuron.h.Vector().record(source.soma[0](0.5)._ref_v)
 	source_axon_v = neuron.h.Vector().record(source.axon[10](0.5)._ref_v)
 
-	# for i in source.axon:
-	# 	print(i)
-	# exit()
 	target_v = neuron.h.Vector().record(target.soma[0](0.5)._ref_v)
 	time_v = neuron.h.Vector().record(neuron.h._ref_t)
-	# print(source.axon)
-	# for i in source.axon:
-	# 	print(source.axon[0](0.5))
 
 	# netcons = []
 	# for syn in target.synapses.synapse_list:
@@ -279,7 +305,7 @@ def connect_2_neurons(cells, syn_pre_cell_type):
 	# 		nc.weight[0] = 0.05
 	# 		nc.delay = 1
 	# 		netcons.append(nc)
-	run_vasya_run(500.0)
+	run_vasya_run(100.0)
 	# plt.plot(time_v, source_v, label = 'source_v')
 	for i in range(len(dist)):
 		if i in [4,5]:
@@ -290,7 +316,7 @@ def connect_2_neurons(cells, syn_pre_cell_type):
 	plt.legend()
 	plt.show()
 
-	return netcons
+	return 1
 
 
 def change_ion_conc(cells, syn_pre_cell_type):
@@ -330,25 +356,32 @@ def change_ion_conc(cells, syn_pre_cell_type):
 
 	return 1
 
-
 if __name__ == '__main__':
 	opj = os.path.join
-	file_loc = os.path.dirname(os.path.abspath(__file__))
-	load_neurons_data(file_loc)
-	# os.system("nrnivmodl mechanisms")
-	# exit()
-
-	template_cells, template_paths, syn_pre_cell_type = get_lists()
-	cells = load_neurons(template_cells, template_paths)
-	# plotting(cells)
-	exit()
-	print(template_cells)
 	
-	# # print(cells[0].soma[0](0.5).k_ion)
-	# print('internal=', neuron.h.cai0_ca_ion, neuron.h.ki0_k_ion)
-	# print('external=', neuron.h.cao0_ca_ion, neuron.h.ko0_k_ion)
+	# load_neurons_data(circuit_folders=['AllLayers/L1', 'AllLayers/L23', 'AllLayers/L4', 'AllLayers/L5', 'AllLayers/L6'])
+	# load_neurons_data(circuit_folders=['AllLayers/L1'])
+	load_neurons_data()
+	# # # os.system("nrnivmodl mechanisms")
+	# exit('=')
+
+	template_cell_ids, syn_pre_cell_type, dict_with_info = get_lists()
+	print(template_cell_ids)
+
+	# with open('synapse_info.json', 'w') as outfile:
+	# 	json.dump(dict_with_info, outfile)
 	# exit()
-	change_ion_conc(cells, syn_pre_cell_type)
+	cells = load_neurons(template_cell_ids)
+	plotting(cells)
+	
+	# for i in range(len(template_paths)):
+	# 	print(template_paths[i])
+	# 	print('	', syn_pre_cell_type[i])
+	# 	print()
+	# exit()
+	
+	# change_ion_conc(cells, syn_pre_cell_type)
+	# connect_2_neurons(cells, syn_pre_cell_type)
 
 
 
