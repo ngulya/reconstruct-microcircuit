@@ -82,12 +82,25 @@ def get_neurons_path(circuit_folder):
 	return l_neuron_folders
 
 
-def change_path_in_hoc(filename, text_to_search, text_to_replace):
-
+def change_str_in_hoc(filename, text_to_search, text_to_replace):
 	with fileinput.FileInput(filename, inplace=True) as file:
 		for line in file:
 			print(line.replace(text_to_search, text_to_replace), end='')
 	return 1
+
+def change_template_name(filename, old, new, has_old_name=True):
+	core_word = 'begintemplate'
+	old_was = ''
+	with fileinput.FileInput(filename, inplace=True) as file:
+		for line in file:
+			if line.find(core_word) >=0:
+				if has_old_name and line.find(old) < 0:
+					exit(f'change_template_name({filename}, {old}, {new})')
+				old_was	= line.split()[1]
+				line = f'{core_word} {new}\n'
+				core_word = 'endtemplate'
+			print(line, end='')
+	return old_was
 
 def change_axons_settings(filename):
 	first_replace = True
@@ -107,22 +120,20 @@ def load_neurons_data(file_loc, circuit_folder='MyLayers'):
 	
 	have_mechanisms = False
 	neuron_folders = get_neurons_path(circuit_folder)
-	biophysic_names = {}
 	for cell_id in neuron_folders:
 		print(cell_id)
 		folder = opj(circuit_folder, cell_id)
 		with open(opj(folder, 'cellinfo.json'), 'r') as fd:
 			cell_info = json.load(fd)
-		biophysic_name = cell_info["cell name"].split('_')[0]
+		biophysic_old_name = cell_info["cell name"].split('_')[0] + '_biophys'
+		biophysic_new_name = cell_id + '_biophys'
+		synapse_new_name = 'synapses_' + cell_id
+		morphology_new_name = 'morphology_' + cell_id
 
 		biophysics_hoc_old = opj(folder, 'biophysics.hoc')
 		biophysics_hoc_new = opj('biophysics', f'{cell_id}.hoc')
-	
-		if not biophysic_name in biophysic_names.keys():
-			shutil.copy(biophysics_hoc_old, biophysics_hoc_new)
-			biophysic_names[biophysic_name] = biophysics_hoc_new
-		else:
-			biophysics_hoc_new = biophysic_names[biophysic_name]
+		shutil.copy(biophysics_hoc_old, biophysics_hoc_new)
+		change_template_name(biophysics_hoc_new, biophysic_old_name, biophysic_new_name)
 
 
 		morphology_old = opj(folder, 'morphology')
@@ -132,22 +143,30 @@ def load_neurons_data(file_loc, circuit_folder='MyLayers'):
 		morphology_hoc_old = opj(folder, 'morphology.hoc')
 		morphology_hoc_new = opj(morphology_new, 'morphology.hoc')
 		shutil.copy(morphology_hoc_old, morphology_hoc_new)
-		change_path_in_hoc(opj(morphology_new, 'morphology.hoc'), 'morphology/', opj(file_loc, morphology_new+'/'))
+		change_str_in_hoc(opj(morphology_new, 'morphology.hoc'), 'morphology/', opj(file_loc, morphology_new+'/'))
+		morphology_old_name = change_template_name(morphology_hoc_new, None, morphology_new_name, False)
 
 		synapses_old = opj(folder, 'synapses')
 		synapses_new = opj('synapses', cell_id)
 		shutil.copytree(synapses_old, synapses_new)
-		change_path_in_hoc(opj(synapses_new, 'synapses.hoc'), 'synapses/', opj(file_loc, synapses_new+'/'))
-		change_path_in_hoc(opj(synapses_new, 'synapses.hoc'), 'synapse_list.append(synapse)', 'synapse.synapseID = synapse_id\nsynapse_list.append(synapse)')
-
-
+		
+		change_str_in_hoc(opj(synapses_new, 'synapses.hoc'), 'synapses/', opj(file_loc, synapses_new+'/'))
+		change_str_in_hoc(opj(synapses_new, 'synapses.hoc'), 'synapse_list.append(synapse)', 'synapse.synapseID = synapse_id\nsynapse_list.append(synapse)')
+		synapse_old_name = change_template_name(opj(synapses_new, 'synapses.hoc'), None, synapse_new_name, False)
+		
 		template_hoc_old = opj(folder, 'template.hoc')
 		template_hoc_new = opj('template', f'{cell_id}.hoc')
 		shutil.copy(template_hoc_old, template_hoc_new)
-		change_path_in_hoc(template_hoc_new, 'morphology.hoc', opj(file_loc, morphology_hoc_new))
-		change_path_in_hoc(template_hoc_new, 'biophysics.hoc', opj(file_loc, biophysics_hoc_new))
-		change_path_in_hoc(template_hoc_new, 'synapses/synapses.hoc', opj(file_loc, synapses_new, 'synapses.hoc'))
-		change_axons_settings(template_hoc_new)	
+		change_str_in_hoc(template_hoc_new, 'morphology.hoc', opj(file_loc, morphology_hoc_new))
+		change_str_in_hoc(template_hoc_new, 'biophysics.hoc', opj(file_loc, biophysics_hoc_new))
+		change_str_in_hoc(template_hoc_new, 'synapses/synapses.hoc', opj(file_loc, synapses_new, 'synapses.hoc'))
+
+		#change template names in addition mechs
+		change_str_in_hoc(template_hoc_new, biophysic_old_name, biophysic_new_name)
+		change_str_in_hoc(template_hoc_new, synapse_old_name, synapse_new_name)
+		change_str_in_hoc(template_hoc_new, morphology_old_name, morphology_new_name)
+
+		change_axons_settings(template_hoc_new)
 
 		if not have_mechanisms:
 			shutil.copytree(opj(folder, 'mechanisms'), 'mechanisms')
@@ -315,15 +334,14 @@ def change_ion_conc(cells, syn_pre_cell_type):
 if __name__ == '__main__':
 	opj = os.path.join
 	file_loc = os.path.dirname(os.path.abspath(__file__))
-	# load_neurons_data(file_loc)
-	
+	load_neurons_data(file_loc)
 	# os.system("nrnivmodl mechanisms")
 	# exit()
 
 	template_cells, template_paths, syn_pre_cell_type = get_lists()
 	cells = load_neurons(template_cells, template_paths)
 	# plotting(cells)
-
+	exit()
 	print(template_cells)
 	
 	# # print(cells[0].soma[0](0.5).k_ion)
