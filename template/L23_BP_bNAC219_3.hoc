@@ -33,6 +33,8 @@ load_file("/Users/nazargulya/Circuit/synapses/L23_BP_bNAC219_3/synapses.hoc")
 
 /** Main cell template */
 begintemplate L23_BP_bNAC219_3
+  public soma_v
+  objref soma_v
   public init
   public soma, dend, apic, axon
   public all, somatic, apical, axonal, basal
