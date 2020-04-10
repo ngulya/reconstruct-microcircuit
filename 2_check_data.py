@@ -151,7 +151,7 @@ def get_section_xyz_d(section, loc=0.5):
 	loc = int(loc* section.n3d())
 	return [section.x3d(loc), section.y3d(loc), section.z3d(loc), section.diam3d(loc)]
 
-def connect_neurons(cells, template_cell_ids, syn_pre_cell_type):
+def connect_neurons(cells, template_cell_ids, syn_pre_cell_type, axon_use=True):
 	#[L4_BP_bAC217_2[0], L5_BP_bAC217_3[0], L1_DAC_cNAC187_3[0], L23_BP_bNAC219_3[0], L6_BP_bAC217_3[0]]
 	netcons = []
 	def get_short_inf(inf, s_list):
@@ -181,39 +181,21 @@ def connect_neurons(cells, template_cell_ids, syn_pre_cell_type):
 					if _cnt > 15:
 						_cnt = 0
 						print('\n			', end='')
-					axon_pos = rnd.randint(0, max_axon)
-					nc = neuron.h.NetCon(source.axon[axon_pos](0.5)._ref_v, syn, sec=source.axon[axon_pos])
+
+					source_location = source.soma[0]
+					if axon_use:
+						axon_pos = rnd.randint(0, max_axon)
+						source_location = source.axon[axon_pos]
+
+					nc = neuron.h.NetCon(source_location(0.5)._ref_v, syn, sec=source_location)
 					nc.weight[0] = 0.05
 					nc.delay = 1
 					netcons.append(nc)
 					_cnt += 1
 			print()
 		print('all presyn connected to postsyn:', target, end='\n\n')
-
-	iclamp = neuron.h.IClamp(cells[3].soma[0](0.5))
-	iclamp.delay = 100
-	iclamp.dur = 300
-	iclamp.amp = 0.1
-
-	list_v = []
-	for cell in cells:
-		list_v.append(neuron.h.Vector().record(cell.soma[0](0.5)._ref_v))
-
-	time_v = neuron.h.Vector().record(neuron.h._ref_t)
-
-
-	run_run_run(600.0)
-	for i in range(len(cells)):
-		label = str(cells[i])
-		if i == 3:
-			label = 'Main: ' + label
-		plt.plot(time_v, list_v[i], label = label)
+	return netcons
 	
-	plt.legend()
-	plt.show()
-
-	return 1
-
 
 def change_ion_conc(cells, syn_pre_cell_type):
 	source = cells[0]
@@ -272,14 +254,56 @@ def check_axon_voltage(cells):
 	plt.legend()
 	plt.show()
 
+def set_stimuls_and_go(config, cells, template_cell_ids, netcons):
+	# iclamp = neuron.h.IClamp(cells[3].soma[0](0.5))
+	# iclamp.delay = 100
+	# iclamp.dur = 300
+	# iclamp.amp = 0.1
+
+	iclamps = []
+	for cell in cells:
+		iclamp = neuron.h.IClamp(cell.soma[0](0.5))
+		iclamp.delay = config['iclamp_delay']
+		iclamp.dur = config['iclamp_dur']
+		iclamp.amp = config['iclamp_amp']
+		iclamps.append(iclamp)
+
+	list_v = []
+	for cell in cells:
+		list_v.append(neuron.h.Vector().record(cell.soma[0](0.5)._ref_v))
+
+	time_v = neuron.h.Vector().record(neuron.h._ref_t)
+	run_run_run(config['tstop'])
+
+	d_result = {'t':list(time_v), 'template_cell_ids':template_cell_ids, 'record':{}}
+
+	for num_cell in range(len(list_v)):
+		d_result['record'][template_cell_ids[num_cell]] = list(list_v[num_cell])
+	
+	with open(f'result/single.json', 'w') as outfile:
+		json.dump(d_result, outfile)
+	print(f'result/single.json')
+	
+	# for i in range(len(cells)):
+	# 	label = str(cells[i])
+	# 	if i == 3:
+	# 		label = 'Main: ' + label
+	# 	plt.plot(time_v, list_v[i], label = label)
+	# plt.legend()
+	# plt.show()
+	
 
 if __name__ == '__main__':
+
 	opj = os.path.join
+	config = {'tstop':600, 'iclamp_delay':50, 'iclamp_dur':100, 'iclamp_amp':0.1}
+	
 	template_cell_ids, syn_pre_cell_type, dict_with_info = get_lists(save_dict=False)
 	print(template_cell_ids)
-	cells = load_cells(template_cell_ids[:1])#only 1 cell load
+	cells = load_cells(template_cell_ids)
 	
 	# plotting(cells)
-	check_axon_voltage(cells)
+	# check_axon_voltage(cells)
 	# change_ion_conc(cells, syn_pre_cell_type)
-	# connect_neurons(cells, template_cell_ids, syn_pre_cell_type)
+	netcons = connect_neurons(cells, template_cell_ids, syn_pre_cell_type, False)
+	set_stimuls_and_go(config, cells, template_cell_ids, netcons)

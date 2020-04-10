@@ -28,11 +28,13 @@ class Cell(object):
 		self._spike_detector = h.NetCon(self._soma(0.5)._ref_v, None, sec=self._soma)
 		self._spike_times = h.Vector()
 		self._spike_detector.record(self._spike_times)
-
+	def __repr__(self):
+		return f'Cell[{self._gid}]_{self._cell}'
 
 class Circuit(object):
 
-	def __init__(self, num_neurons=5, syn_w=0.05, syn_delay=1, save_synapses=False):
+	def __init__(self, config, num_neurons=5, syn_w=0.05, syn_delay=1, save_synapses=False):
+		self.config = config
 		self.num_neurons = num_neurons
 		self.syn_w = syn_w
 		self.syn_delay = syn_delay
@@ -40,12 +42,17 @@ class Circuit(object):
 		self._set_gids()### assign gids to processors
 		self._load_cells()
 		self._connect_cells()
-		if pc.gid_exists(3):
-
-			self.iclamp = h.IClamp(pc.gid2cell(3).soma[0](0.5))
-			self.iclamp.delay = 100
-			self.iclamp.dur = 300
-			self.iclamp.amp = 0.1	
+		# if pc.gid_exists(3):
+		# 	self.iclamp = h.IClamp(pc.gid2cell(3).soma[0](0.5))
+		# 	self.iclamp.delay = 100
+		# 	self.iclamp.dur = 300
+		# 	self.iclamp.amp = 0.1
+		for gid in self.gidlist:
+			if pc.gid_exists(gid):
+				self.iclamp = h.IClamp(pc.gid2cell(gid).soma[0](0.5))
+				self.iclamp.delay = self.config['iclamp_delay']
+				self.iclamp.dur = self.config['iclamp_dur']
+				self.iclamp.amp = self.config['iclamp_amp']
 
 	def get_synapses_pre_mtypes(self, filename):
 		d_mtype_map, d_synapses, d_type_synapses = {}, {}, {}
@@ -100,6 +107,7 @@ class Circuit(object):
 		if save_synapses:
 			with open('synapse_info.json', 'w') as outfile:
 				json.dump(self.dict_with_info, outfile)
+
 		return self.template_cell_ids, self.syn_pre_cell_type, self.dict_with_info
 
 	def _set_gids(self):

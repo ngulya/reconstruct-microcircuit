@@ -65,7 +65,7 @@ def change_axons_settings(filename):
 			print(line, end='')
 	return 1
 
-def load_neurons_data(circuit_folders=['MyLayers']):
+def load_neurons_data(axon_use=True, circuit_folders=['MyLayers']):
 	file_loc = os.path.dirname(os.path.abspath(__file__))
 	
 	for folder in ['synapses', 'morphology', 'biophysics', 'template']:
@@ -127,7 +127,8 @@ def load_neurons_data(circuit_folders=['MyLayers']):
 			change_str_in_hoc(template_hoc_new, morphology_old_name, morphology_new_name)
 			change_template_name(template_hoc_new, None, cell_id, False)
 			add_new_objects(template_hoc_new, 'soma_v')
-			change_axons_settings(template_hoc_new)
+			if axon_use:
+				change_axons_settings(template_hoc_new)
 
 			if not have_mechanisms:
 				shutil.copytree(opj(folder, 'mechanisms'), 'mechanisms')
@@ -143,9 +144,9 @@ def load_neurons_data(circuit_folders=['MyLayers']):
 
 if __name__ == '__main__':
 	opj = os.path.join
-	# load_neurons_data(circuit_folders=['AllLayers/L1', 'AllLayers/L23', 'AllLayers/L4', 'AllLayers/L5', 'AllLayers/L6'])
-	# load_neurons_data(circuit_folders=['AllLayers/L1'])	
-	load_neurons_data()
+	# load_neurons_data(axon_use=False, circuit_folders=['AllLayers/L1', 'AllLayers/L23', 'AllLayers/L4', 'AllLayers/L5', 'AllLayers/L6'])
+	# load_neurons_data(axon_use=False, circuit_folders=['AllLayers/L1'])	
+	load_neurons_data(axon_use=False)
 	print("\n\nExecute this command:\nnrnivmodl mechanisms/")
 
 	
