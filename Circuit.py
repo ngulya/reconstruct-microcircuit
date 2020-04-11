@@ -28,6 +28,7 @@ class Cell(object):
 		self._spike_detector = h.NetCon(self._soma(0.5)._ref_v, None, sec=self._soma)
 		self._spike_times = h.Vector()
 		self._spike_detector.record(self._spike_times)
+
 	def __repr__(self):
 		return f'Cell[{self._gid}]_{self._cell}'
 
@@ -42,19 +43,24 @@ class Circuit(object):
 		self._set_gids()### assign gids to processors
 		self._load_cells()
 		self._connect_cells()
+
 		# if pc.gid_exists(3):
 		# 	self.iclamp = h.IClamp(pc.gid2cell(3).soma[0](0.5))
 		# 	self.iclamp.delay = 100
 		# 	self.iclamp.dur = 300
 		# 	self.iclamp.amp = 0.1
+
+		self.l_iclamp = []
 		for gid in self.gidlist:
 			if pc.gid_exists(gid):
-				self.iclamp = h.IClamp(pc.gid2cell(gid).soma[0](0.5))
-				self.iclamp.delay = self.config['iclamp_delay']
-				self.iclamp.dur = self.config['iclamp_dur']
-				self.iclamp.amp = self.config['iclamp_amp']
+				print(f'		gid_exists{gid}')
+				iclamp = h.IClamp(pc.gid2cell(gid).soma[0](0.5))
+				iclamp.delay = self.config['iclamp_delay']
+				iclamp.dur = self.config['iclamp_dur']
+				iclamp.amp = self.config['iclamp_amp']
+				self.l_iclamp.append(iclamp)
 
-	def get_synapses_pre_mtypes(self, filename):
+	def _get_synapses_pre_mtypes(self, filename):
 		d_mtype_map, d_synapses, d_type_synapses = {}, {}, {}
 
 		with open(os.path.join(filename, 'mtype_map.tsv'), 'r') as fd:
@@ -95,7 +101,7 @@ class Circuit(object):
 				cell_id = _template_paths.split('.hoc')[0]
 				
 				
-				num_mtypes_synapses, mtype_synapses, ie_type_synapses = self.get_synapses_pre_mtypes(os.path.join('synapses', cell_id))
+				num_mtypes_synapses, mtype_synapses, ie_type_synapses = self._get_synapses_pre_mtypes(os.path.join('synapses', cell_id))
 				if save_synapses:
 					self.dict_with_info[cell_id] = {'num_synapses':len(mtype_synapses), 
 					'num_mtypes_synapse':num_mtypes_synapse,
@@ -134,7 +140,7 @@ class Circuit(object):
 			# print(cell.gid, cell.cell_id, cell.soma_v)
 			pc.cell(cell._gid, cell._spike_detector)
 
-	def get_short_inf(self, inf, s_list):
+	def _get_short_inf(self, inf, s_list):
 		res = {'L1':0, 'L23':0,'L4':0,'L5':0,'L6':0}
 		for syn in s_list:
 			layer = inf[int(syn.synapseID)].split('_')[0]
@@ -142,28 +148,43 @@ class Circuit(object):
 		return res
 
 	def _connect_cells(self):
-
+		self.log_pre_post_syn = {}
 		for gid_t, target in zip(self.gidlist, self.cells):
-			_inf = self.get_short_inf(self.syn_pre_cell_type[gid_t], target._synapses.synapse_list)
+			
+			post_syn_cell_id = target._cell_id
+			self.log_pre_post_syn[post_syn_cell_id] = {}
+			info_for_target = self.syn_pre_cell_type[gid_t]#{target_syn_id: 'L1_HAC', 1: 'L1_HAC', 2:'L2_DSF'}
+			_inf = self._get_short_inf(info_for_target, target._synapses.synapse_list)
+			self.log_pre_post_syn[post_syn_cell_id]['info_for_target'] = _inf
 			print('post_syn:', target, '	num pre_syn:', len(target._synapses.synapse_list), _inf)
+			
 			for gid_s in range(self.num_neurons):
 				if gid_t == gid_s:
 					continue
-			pre_syn_cell_id = self.template_cell_ids[gid_s]
-			print('	pre_syn:', pre_syn_cell_id, end = '->	')
-			pre_syn_layer = pre_syn_cell_id.split('_')[0]
-			info_for_target = self.syn_pre_cell_type[gid_t]
-			
-			for syn in target._synapses.synapse_list:
-				could_be_pre_syn = info_for_target[int(syn.synapseID)]
-				could_be_pre_syn_layer = could_be_pre_syn.split('_')[0]
-				if could_be_pre_syn_layer == pre_syn_layer:
-					print(could_be_pre_syn, end=' ')
 
-					nc = pc.gid_connect(gid_s, syn)
-					nc.weight[0] = self.syn_w
-					nc.delay = self.syn_delay
-					target._ncs.append(nc)
-				# print()
+				pre_syn_cell_id = self.template_cell_ids[gid_s]
+				pre_syn_layer = pre_syn_cell_id.split('_')[0]
+
+				if not pre_syn_cell_id in self.log_pre_post_syn[post_syn_cell_id]:
+					self.log_pre_post_syn[post_syn_cell_id][pre_syn_cell_id] = 0
+				# print('	pre_syn:', pre_syn_cell_id, end = '->	')
+				_cnt=0
+				for syn in target._synapses.synapse_list:
+					could_be_pre_syn = info_for_target[int(syn.synapseID)]
+					could_be_pre_syn_layer = could_be_pre_syn.split('_')[0]
+
+					if could_be_pre_syn_layer == pre_syn_layer:
+						# print(could_be_pre_syn, end=' ')
+						# if _cnt > 10:
+						# 	_cnt = 0
+						# 	print('\n			', end='')
+
+						nc = pc.gid_connect(gid_s, syn)
+						nc.weight[0] = self.syn_w
+						nc.delay = self.syn_delay
+						target._ncs.append(nc)
+						self.log_pre_post_syn[post_syn_cell_id][pre_syn_cell_id] += 1
+						_cnt+=1
+					# print()
 			print('all presyn connected to postsyn:', target, end='\n\n')
 
