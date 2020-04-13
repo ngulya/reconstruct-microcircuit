@@ -1,1 +1,1 @@
-../mechanisms/Ca_HVA.mod
+../mechanisms//Ca_HVA.mod

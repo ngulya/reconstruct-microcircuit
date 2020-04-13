@@ -1,5 +1,4 @@
 import os
-import neuron
 import matplotlib
 import numpy
 import sys
@@ -66,6 +65,9 @@ def change_axons_settings(filename):
 	return 1
 
 def load_neurons_data(axon_use=True, circuit_folders=['MyLayers']):
+	d_nums = {'L1': 70, 'L23' :215, 'L4':230, 'L5':260, 'L6':260}
+	d_nums_should = {'L1': 70, 'L23' :215, 'L4':230, 'L5':260, 'L6':260}
+
 	file_loc = os.path.dirname(os.path.abspath(__file__))
 	
 	for folder in ['synapses', 'morphology', 'biophysics', 'template']:
@@ -126,7 +128,7 @@ def load_neurons_data(axon_use=True, circuit_folders=['MyLayers']):
 			change_str_in_hoc(template_hoc_new, synapse_old_name, synapse_new_name)
 			change_str_in_hoc(template_hoc_new, morphology_old_name, morphology_new_name)
 			change_template_name(template_hoc_new, None, cell_id, False)
-			add_new_objects(template_hoc_new, 'soma_v')
+			# add_new_objects(template_hoc_new, 'soma_v')
 			if axon_use:
 				change_axons_settings(template_hoc_new)
 
@@ -141,12 +143,137 @@ def load_neurons_data(axon_use=True, circuit_folders=['MyLayers']):
 
 	return 1
 
+def reduce_layer_cell_number(lst_layer_cell, will_be_num, etype, mtype):
+
+	multiplier_me = sum(mtype.values())/sum(etype.values())
+
+	for _type in etype.keys():
+		asad = etype[_type]
+		etype[_type] = int(multiplier_me * etype[_type])#sum(etype.values()) != sum(mtype.values()) because of diffent microcircuits?
+
+	cells = []
+	for cell in lst_layer_cell:
+		cell = cell.split('_')
+		cell = '_'.join(cell[:-1])
+		if not cell in cells:
+			cells.append(cell)
+	
+	cell_mtype = []
+	cell_etype = []
+	for metype in cells:
+		for _mtype in mtype.keys():
+			if _mtype in metype:
+				_etype_with_shit = metype.replace(_mtype+'_', '')				
+				for _etype in etype.keys():
+					if _etype in _etype_with_shit:
+						cell_etype.append(_etype)
+						break
+				cell_mtype.append(_mtype)
+				break
+
+	etype_our, mtype_our = etype.copy(), mtype.copy()
+	for k in etype_our.keys():
+		etype_our[k] = 0
+	for k in mtype_our.keys():
+		mtype_our[k] = 0
+	
+	metype = {}
+	for i in range(len(cells)):
+		_etype = cell_etype[i]
+		_mtype = cell_mtype[i]
+
+		etype_our[_etype] += 1
+		mtype_our[_mtype] += 1
+		metype.setdefault(_mtype, [])
+		metype[_mtype].append(_etype)
+
+		# print(f'{cells[i]}	| {cell_mtype[i]} |	{cell_etype[i]}')
+	# print(len(cells), len(numpy.unique(cell_mtype)), len(numpy.unique(cell_etype)))
+	
+	for k, v in metype.items():
+		print(k, v)
+
+	res_metype = {}
+	for i in range(len(cells)):
+		_mtype = cell_mtype[i]
+		_etype = cell_etype[i]
+		multiplier_m = mtype[_mtype]/len(metype[_mtype])
+		print(f'	{_mtype}:should be {mtype[_mtype]}  but we have  {len(metype[_mtype])} | {multiplier_m}')
+		
+		res_metype.setdefault(_mtype, [])
+		for _i in range(int(multiplier_m)):
+			res_metype[_mtype].append(_etype)
+
+
+	new_mtype_our, new_etype_our = mtype_our.copy(), etype_our.copy()
+	for k in new_etype_our.keys():
+		new_etype_our[k] = 0
+	for k in new_mtype_our.keys():
+		new_mtype_our[k] = 0
+	
+	for _mtype, _etype in res_metype.items():
+		new_mtype_our[_mtype] = len(_etype)
+		for _e in _etype:
+			new_etype_our[_e] += 1
+
+	print(new_mtype_our, 'New')
+	print(mtype_our, 'Our')
+	print(mtype)
+	print()
+	print(new_etype_our, 'New')
+	print(etype_our, 'Our')
+	print(etype)
+
+	exit()
+
+
+def duplicated_map(multiplier=0.1, json_folder='BBPjson', folder_layers='AllLayers'):
+	'''
+	multiplier = 0.1 means that only 10% from all 30k neurons will be modeleted
+	'''
+	cells = {'L1':[], 'L23':[],'L4':[],'L5':[],'L6':[]}
+	for layer in os.listdir(folder_layers):
+		layer_cell = opj(folder_layers, layer)
+		if os.path.isdir(layer_cell):
+			for cell in os.listdir(layer_cell):
+				if os.path.isdir(opj(layer_cell, cell)):
+					cells[layer].append(cell)
+	
+	with open(opj(json_folder, 'circuit_download.json'), 'r') as f:
+		circuit_download = json.load(f)
+	
+	with open(opj(json_folder, 'layer_download.json'), 'r') as f:
+		layer_download = json.load(f)
+
+	num_cells, num_cells_in_crc = 0, 0
+	# print(4873 +6081 +6453 +10080 + 144)
+	for layer, lst_layer_cell in cells.items():
+		_num_cells = len(lst_layer_cell)
+		_num_cells_in_crc = circuit_download["No. of neurons per layer"][layer]
+		# print(layer)
+		will_be_num = _num_cells_in_crc*0.1
+		etype = layer_download[layer]["No. of neurons per electrical types"]
+		mtype = layer_download[layer]["No. of neurons per morphological types"]
+		reduce_layer_cell_number(lst_layer_cell, will_be_num, etype, mtype)
+		# if will_be_num <= _num_cells:
+		# 	etype = layer_download[layer]["No. of neurons per electrical types"]
+		# 	mtype = layer_download[layer]["No. of neurons per morphological types"]
+		# 	reduce_layer_cell_number(lst_layer_cell, will_be_num, etype, mtype)
+		# 	exit()
+		num_cells += _num_cells
+		num_cells_in_crc += _num_cells_in_crc
+		print()
+	print(num_cells, num_cells_in_crc)
+
+	exit()
 
 if __name__ == '__main__':
 	opj = os.path.join
-	# load_neurons_data(axon_use=False, circuit_folders=['AllLayers/L1', 'AllLayers/L23', 'AllLayers/L4', 'AllLayers/L5', 'AllLayers/L6'])
+	duplicated_map()
+	exit()
+	load_neurons_data(axon_use=False, circuit_folders=['AllLayers/L1', 'AllLayers/L23', 'AllLayers/L4', 'AllLayers/L5', 'AllLayers/L6'])
 	# load_neurons_data(axon_use=False, circuit_folders=['AllLayers/L1'])	
-	load_neurons_data(axon_use=False)
+	# load_neurons_data(axon_use=False, circuit_folders=['MyLayers19'])
 	print("\n\nExecute this command:\nnrnivmodl mechanisms/")
 
 	
