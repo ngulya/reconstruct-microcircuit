@@ -64,7 +64,7 @@ def change_axons_settings(filename):
 			print(line, end='')
 	return 1
 
-def load_neurons_data(d_map=None, axon_use=True, circuit_folders=['MyLayers']):
+def load_neurons_data(d_map=None, axon_use=True, circuit_folders=['MyLayers'], name_cell=None):
 	
 	file_loc = os.path.dirname(os.path.abspath(__file__))
 	
@@ -80,6 +80,8 @@ def load_neurons_data(d_map=None, axon_use=True, circuit_folders=['MyLayers']):
 
 	for _num_fold, neuron_folders in enumerate(neuron_parent_folders):
 		for cell_id in neuron_folders:
+			if not name_cell is None and cell_id != name_cell:
+				continue
 			print(cell_id)
 			folder = opj(circuit_folders[_num_fold], cell_id)
 			with open(opj(folder, 'cellinfo.json'), 'r') as fd:
@@ -129,7 +131,6 @@ def load_neurons_data(d_map=None, axon_use=True, circuit_folders=['MyLayers']):
 			# add_new_objects(template_hoc_new, 'soma_v')
 			if axon_use:
 				change_axons_settings(template_hoc_new)
-
 			if not have_mechanisms:
 				shutil.copytree(opj(folder, 'mechanisms'), 'mechanisms')
 				have_mechanisms = True
@@ -259,7 +260,7 @@ def get_new_statistics(mtype, etype, MEtype):
 	return newmtype, newetype
 
 
-def duplicated_map(multiplier=0.1, json_folder='BBPjson', folder_layers='AllLayers'):
+def duplicated_map(multiplier, json_folder='BBPjson', folder_layers='AllLayers'):
 	'''
 	multiplier = 0.1 means that only 10% from all 30k neurons will be modeleted
 	'''
@@ -296,7 +297,7 @@ def duplicated_map(multiplier=0.1, json_folder='BBPjson', folder_layers='AllLaye
 	print('will  be', num_cells)
 	return d_map
 
-def load_duplicated_neurons_data(d_map, circuit_folders='AllLayers'):
+def load_duplicated_neurons_data(d_map, axon_use=False, circuit_folders='AllLayers'):
 
 	file_loc = os.path.dirname(os.path.abspath(__file__))
 	
@@ -366,7 +367,10 @@ def load_duplicated_neurons_data(d_map, circuit_folders='AllLayers'):
 				change_str_in_hoc(template_hoc_new, morphology_old_name, morphology_new_name)
 				change_template_name(template_hoc_new, None, cell_id, False)
 				# add_new_objects(template_hoc_new, 'soma_v')
-
+				
+				if axon_use:
+					change_axons_settings(template_hoc_new)
+				
 				if not have_mechanisms:
 					shutil.copytree(opj(folder, 'mechanisms'), 'mechanisms')
 					have_mechanisms = True
@@ -378,10 +382,10 @@ def load_duplicated_neurons_data(d_map, circuit_folders='AllLayers'):
 
 if __name__ == '__main__':
 	opj = os.path.join
-	d_map = duplicated_map()
-	load_duplicated_neurons_data(d_map, circuit_folders='AllLayers')
+	d_map = duplicated_map(multiplier=0.1)
+	load_duplicated_neurons_data(d_map, axon_use=True, circuit_folders='AllLayers')
 	# load_neurons_data(axon_use=False, circuit_folders=['AllLayers/L1'])	
-	# load_neurons_data(axon_use=False, circuit_folders=['MyLayers19'])
+	# load_neurons_data(axon_use=True, circuit_folders=['AllLayers/L23'], name_cell='L23_SBC_dNAC222_3')
 	print("\n\nExecute this command:\nnrnivmodl mechanisms/")
 
 	

@@ -5,13 +5,13 @@ import time
 import json
 import numpy
 import os
-# clear; mpiexec -n 3 nrniv 3_run.py
+# clear; mpiexec -n 6 nrniv 3_run.py
 
 def run_run_run(tstop):
 	print(f'\nRunning for {tstop} ms')
 	tstart = time.time()
 	leftsec = tstop
-	num_windows = max([int(float(tstop)/50), 10])
+	num_windows = max([int(float(tstop)/50), 30])
 	windows = numpy.linspace(0,tstop,num_windows)
 
 	for iround, neuron.h.tstop in enumerate(windows[1:]):
@@ -81,7 +81,7 @@ def information_print(CRC):
 						exit(f'error {pre_syn} | info_for_target_full2')
 	
 if __name__ == '__main__':
-	config = {'tstop':150, 'iclamp_delay':50, 'iclamp_dur':50, 'iclamp_amp':0.14}
+	config = {'tstop':150, 'iclamp_delay':0, 'iclamp_dur':30, 'iclamp_amp':0.1}
 	num_neurons = get_neuron_number()
 
 	CRC = Circuit(config, num_neurons)

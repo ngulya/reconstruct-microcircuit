@@ -162,7 +162,7 @@ def check_axon_voltage(cells):
 	plt.legend()
 	plt.show()
 
-def load_cells(template_cell_ids):
+def load_cells(template_cell_ids, add_synapse=True):
 	neuron.h.load_file("stdrun.hoc")
 	neuron.h.load_file("import3d.hoc")
 
@@ -173,7 +173,7 @@ def load_cells(template_cell_ids):
 	
 		neuron.h.load_file(opj('template', f'{cell_id}.hoc'))
 		print(cell_id, 'left:', alls)
-		_c = getattr(neuron.h, cell_id)(1)
+		_c = getattr(neuron.h, cell_id)(1 if add_synapse else 0)
 		cells.append(_c)
 		cells_map[cell_id] = _c
 		alls -= 1
@@ -357,59 +357,73 @@ def connect_neurons(synapses_map, cells_map, template_cell_ids, syn_pre_cell_typ
 	
 
 def set_stimuls_and_go(config, cells, template_cell_ids, netcons):
-	# iclamp = neuron.h.IClamp(cells[3].soma[0](0.5))
-	# iclamp.delay = 100
-	# iclamp.dur = 300
-	# iclamp.amp = 0.1
+	if len(netcons):
+		iclamps = []
+		for cell in cells:
+			iclamp = neuron.h.IClamp(cell.soma[0](0.5))
+			iclamp.delay = config['iclamp_delay']
+			iclamp.dur = config['iclamp_dur']
+			iclamp.amp = config['iclamp_amp']
+			iclamps.append(iclamp)
 
-	iclamps = []
-	for cell in cells:
+		list_v = []
+		list_spike = []
+		for cell in cells:
+			list_v.append(neuron.h.Vector().record(cell.soma[0](0.5)._ref_v))
+
+			spike_times = neuron.h.Vector()
+			_spike_detector = neuron.h.NetCon(cell.soma[0](0.5)._ref_v, None, sec=cell.soma[0])
+			_spike_detector.record(spike_times)
+			list_spike.append(spike_times)
+
+		time_v = neuron.h.Vector().record(neuron.h._ref_t)
+		run_run_run(config['tstop'])
+
+		d_result = {'t':list(time_v), 'template_cell_ids':template_cell_ids, 'record_soma_v':{}, 'record_spike_times':{}}
+
+		for num_cell in range(len(list_v)):
+			d_result['record_soma_v'][template_cell_ids[num_cell]] = list(list_v[num_cell])
+			d_result['record_spike_times'][template_cell_ids[num_cell]] = list(list_spike[num_cell])
+		
+		with open(f'result/single.json', 'w') as outfile:
+			json.dump(d_result, outfile)
+		print(f'result/single.json')
+	else:
+		cell = cells[0]
+		
+		print('-')
+		print(cell.axon)
+
+		
+		# for i, sec in enumerate(cell.axon):
+		# 	if i > 120:
+		# 		neuron.h.delete_section(sec=sec)
+
+
 		iclamp = neuron.h.IClamp(cell.soma[0](0.5))
-		iclamp.delay = config['iclamp_delay']
-		iclamp.dur = config['iclamp_dur']
-		iclamp.amp = config['iclamp_amp']
-		iclamps.append(iclamp)
+		iclamp.delay = 3000
+		iclamp.dur = 100
+		iclamp.amp = 0.1
 
-	list_v = []
-	list_spike = []
-	for cell in cells:
-		list_v.append(neuron.h.Vector().record(cell.soma[0](0.5)._ref_v))
+		time_v = neuron.h.Vector().record(neuron.h._ref_t)
+		soma_v = neuron.h.Vector().record(cell.soma[0](0.5)._ref_v)
 
-		spike_times = neuron.h.Vector()
-		_spike_detector = neuron.h.NetCon(cell.soma[0](0.5)._ref_v, None, sec=cell.soma[0])
-		_spike_detector.record(spike_times)
-		list_spike.append(spike_times)
-
-	time_v = neuron.h.Vector().record(neuron.h._ref_t)
-	run_run_run(config['tstop'])
-
-	d_result = {'t':list(time_v), 'template_cell_ids':template_cell_ids, 'record_soma_v':{}, 'record_spike_times':{}}
-
-	for num_cell in range(len(list_v)):
-		d_result['record_soma_v'][template_cell_ids[num_cell]] = list(list_v[num_cell])
-		d_result['record_spike_times'][template_cell_ids[num_cell]] = list(list_spike[num_cell])
-	
-	with open(f'result/single.json', 'w') as outfile:
-		json.dump(d_result, outfile)
-	print(f'result/single.json')
-	
-	# for i in range(len(cells)):
-	# 	label = str(cells[i])
-	# 	if i == 3:
-	# 		label = 'Main: ' + label
-	# 	plt.plot(time_v, list_v[i], label = label)
-	# plt.legend()
-	# plt.show()
+		run_run_run(500)
+		plt.plot(time_v, soma_v, label = str(cell))
+		plt.legend()
+		plt.show()
 	
 
 if __name__ == '__main__':
 
 	opj = os.path.join
-
+	add_synapse = False
+	
 	config = {'tstop':150, 'iclamp_delay':50, 'iclamp_dur':50, 'iclamp_amp':0.1}
 	template_cell_ids, R_syn_pre_cell_type, syn_pre_cell_type, num_pre_syn_type, dict_with_info = get_lists(save_dict=False)
 	print(template_cell_ids)
-	cells, cells_map = load_cells(template_cell_ids)
+	cells, cells_map = load_cells(template_cell_ids, add_synapse)
+
 
 	# plotting(cells)
 	# check_axon_voltage(cells)
@@ -419,6 +433,7 @@ if __name__ == '__main__':
 									gid_syn_pre_cell_type=syn_pre_cell_type, 
 									gid_R_syn_pre_cell_type=R_syn_pre_cell_type)
 
-	netcons = connect_neurons(synapses_map, cells_map, template_cell_ids, syn_pre_cell_type, False)
-	set_stimuls_and_go(config, cells, template_cell_ids, netcons)
+	set_stimuls_and_go(config, cells, template_cell_ids, [])
+	# netcons = connect_neurons(synapses_map, cells_map, template_cell_ids, syn_pre_cell_type, False)
+	# set_stimuls_and_go(config, cells, template_cell_ids, netcons)
 	
