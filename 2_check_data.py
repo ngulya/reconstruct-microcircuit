@@ -108,21 +108,21 @@ def get_synapses_pre_mtypes(filename):
 def change_ion_conc(cells, syn_pre_cell_type):
 	source = cells[0]
 
-	print('[ca] inter:', neuron.h.cai0_ca_ion, '	', neuron.h.cao0_ca_ion, 'ext')
-	print('soma [ca] inter:', source.soma[0](0.5).cai, '	', source.soma[0](0.5).cao, 'ext')
+	print('	[ca]	 inter:', neuron.h.cai0_ca_ion, '	', neuron.h.cao0_ca_ion, 'ext')
+	print('soma [ca]	 inter:', source.soma[0](0.5).cai, '	', source.soma[0](0.5).cao, 'ext')
 	print(source.soma[0](0.5).eca, 'eca')
-	neuron.h.cai0_ca_ion = 5e-05
-	neuron.h.cao0_ca_ion = 2
+	# neuron.h.cai0_ca_ion = 5e-05
+	neuron.h.cao0_ca_ion = 1.2
 	neuron.h.stdinit()
 
-	print('[ca] inter:', neuron.h.cai0_ca_ion, '	', neuron.h.cao0_ca_ion, 'ext')
-	print('soma [ca] inter:', source.soma[0](0.5).cai, '	', source.soma[0](0.5).cao, 'ext')
+	print('	[ca]	 inter:', neuron.h.cai0_ca_ion, '	', neuron.h.cao0_ca_ion, 'ext')
+	print('soma [ca]	 inter:', source.soma[0](0.5).cai, '	', source.soma[0](0.5).cao, 'ext')
 	print(source.soma[0](0.5).eca, 'eca')
-
+	# exit()
 	iclamp = neuron.h.IClamp(source.dend[1](0.5))
-	iclamp.delay = 100
-	iclamp.dur = 500
-	iclamp.amp = 100e-3
+	iclamp.delay = 1
+	iclamp.dur = 5000
+	iclamp.amp = 200e-4
 
 
 	source_v = neuron.h.Vector().record(source.soma[0](0.5)._ref_v)
@@ -130,7 +130,7 @@ def change_ion_conc(cells, syn_pre_cell_type):
 	source_axon_v = neuron.h.Vector().record(source.axon[0](0.5)._ref_v)
 	time_v = neuron.h.Vector().record(neuron.h._ref_t)
 
-	run_run_run(700.0)
+	run_run_run(1500.0)
 
 	# plt.plot(time_v, source_axon_v, label = 'source_axon_v')
 	plt.plot(time_v, source_v, label = 'source_v')
@@ -179,14 +179,24 @@ def load_cells(template_cell_ids, add_synapse=True):
 		alls -= 1
 	return cells, cells_map
 
-def run_run_run(tstop):
+def run_run_run(tstop, cells=[]):
 	print(f'\n\nRunning for {tstop} ms')
+	
 	tstart = time.time()
 	leftsec = tstop
 	num_windows = max([int(float(tstop)/50), 10])
 	windows = numpy.linspace(0,tstop,num_windows)
-
+	
+	neuron.h.cao0_ca_ion = 2
+	neuron.h.stdinit()
+	
+	# print('\n-	[ca]	 inter:', cells[0].soma[0](0.5).ca_ion.__getattribute__('cai'), '	', cells[0].soma[0](0.5).ca_ion.__getattribute__('cao'), 'ext')
+	# neuron.h.tstop = tstop
+	# neuron.h.run()
+	# print('\n-	[ca]	 inter:', cells[0].soma[0](0.5).ca_ion.__getattribute__('cai'), '	', cells[0].soma[0](0.5).ca_ion.__getattribute__('cao'), 'ext')
+	# return 		
 	for iround, neuron.h.tstop in enumerate(windows[1:]):
+		# print('\n-	[ca]	 inter:', cells[0].soma[0](0.5).ca_ion.__getattribute__('cai'), '	', cells[0].soma[0](0.5).ca_ion.__getattribute__('cao'), 'ext')
 		print(f'\rLeft {int(tstop-neuron.h.tstop)} ms in simulation || {leftsec} sec', end='    ')
 		if iround == 0:
 			neuron.h.run()
@@ -390,29 +400,65 @@ def set_stimuls_and_go(config, cells, template_cell_ids, netcons):
 		print(f'result/single.json')
 	else:
 		cell = cells[0]
-		
+		step_amp = [0] * 3
+		with open(f'current_amps/{template_cell_ids[0]}.dat', 'r') as current_amps_file:
+			first_line = current_amps_file.read().split('\n')[0].strip()
+			hyp_amp, step_amp[0], step_amp[1], step_amp[2] = first_line.split(' ')
+
 		print('-')
 		print(cell.axon)
 
-		
-		# for i, sec in enumerate(cell.axon):
-		# 	if i > 120:
-		# 		neuron.h.delete_section(sec=sec)
-
+		firing_amp = float(step_amp[0])/1.2
+		hyp_amp = float(hyp_amp)
 
 		iclamp = neuron.h.IClamp(cell.soma[0](0.5))
-		iclamp.delay = 3000
-		iclamp.dur = 100
-		iclamp.amp = 0.1
+		iclamp.delay = 100
+		iclamp.dur = 1000
+		iclamp.amp = firing_amp
+
+
+		hyp_iclamp = neuron.h.IClamp(cell.soma[0](0.5))
+		hyp_iclamp.delay = 0
+		hyp_iclamp.dur = 1000
+		hyp_iclamp.amp = hyp_amp
 
 		time_v = neuron.h.Vector().record(neuron.h._ref_t)
 		soma_v = neuron.h.Vector().record(cell.soma[0](0.5)._ref_v)
 
-		run_run_run(500)
-		plt.plot(time_v, soma_v, label = str(cell))
+
+		# ?cells[0].soma[0](0.1).ca_ion.__getattribute__('cao')
+		# for seg in cells[0].soma[0]:
+		# 	print(dir(seg))
+		# 	print(dir(seg.ca_ion))
+		# 	print(seg.ca_ion.cai)
+		# 	exit()
+		
+		# print('	[ca]	 inter:', neuron.h.cai0_ca_ion, '	', neuron.h.cao0_ca_ion, 'ext')
+		# neuron.h.cao0_ca_ion = 13
+		# neuron.h.stdinit()
+		# print('	[ca]	 inter:', neuron.h.cai0_ca_ion, '	', neuron.h.cao0_ca_ion, 'ext')
+	
+		print(cells[0].soma[0](0.5).ca_ion.__getattribute__('cao'), 'ext')
+		# cc = [cells[0].soma[0](0.5).ca_ion.__getattribute__('cai')
+		# , cells[1].soma[0](0.5).ca_ion.__getattribute__('cai')
+		# , cells[2].soma[0](0.5).ca_ion.__getattribute__('cai')
+		# , cells[3].soma[0](0.5).ca_ion.__getattribute__('cai')]
+		# cc = numpy.unique(cc)
+		# print('	[ca]	 inter:', cc) 
+	
+		run_run_run(1000, [])
+		print(cells[0].soma[0](0.5).ca_ion.__getattribute__('cao'), 'ext')
+		# cc = [cells[0].soma[0](0.5).ca_ion.__getattribute__('cai')
+		# , cells[1].soma[0](0.5).ca_ion.__getattribute__('cai')
+		# , cells[2].soma[0](0.5).ca_ion.__getattribute__('cai')
+		# , cells[3].soma[0](0.5).ca_ion.__getattribute__('cai')]
+		# cc = numpy.unique(cc)
+		# print('	[ca]	 inter:', cc) 
+	
+
+		plt.plot(time_v, soma_v, label = '100')
 		plt.legend()
 		plt.show()
-	
 
 if __name__ == '__main__':
 
@@ -422,18 +468,27 @@ if __name__ == '__main__':
 	config = {'tstop':150, 'iclamp_delay':50, 'iclamp_dur':50, 'iclamp_amp':0.1}
 	template_cell_ids, R_syn_pre_cell_type, syn_pre_cell_type, num_pre_syn_type, dict_with_info = get_lists(save_dict=False)
 	print(template_cell_ids)
+	# template_cell_ids = [template_cell_ids[0]]
 	cells, cells_map = load_cells(template_cell_ids, add_synapse)
-
-
+	# print(dir(cells[0].soma[0](0.5).ca_ion))
+	# print(cells[0].soma[0](0.5).ca_ion.__getattribute__('cao'))
+	# print(cells[0].soma[0](0.5).ca_ion.__getattribute__('cai'))
+	
+	# get_tonic_depolarization_data(cells, template_cell_ids, 250)
 	# plotting(cells)
 	# check_axon_voltage(cells)
 	# change_ion_conc(cells, syn_pre_cell_type)
-	synapses_map = _create_synapses(gid_cid=template_cell_ids,
-									gid_num_pre_syn_mtype=num_pre_syn_type, 
-									gid_syn_pre_cell_type=syn_pre_cell_type, 
-									gid_R_syn_pre_cell_type=R_syn_pre_cell_type)
-
+	# exit()	
+	# synapses_map = _create_synapses(gid_cid=template_cell_ids,
+	# 								gid_num_pre_syn_mtype=num_pre_syn_type, 
+	# 								gid_syn_pre_cell_type=syn_pre_cell_type, 
+	# 								gid_R_syn_pre_cell_type=R_syn_pre_cell_type)
+	
+	
 	set_stimuls_and_go(config, cells, template_cell_ids, [])
+
+
+
 	# netcons = connect_neurons(synapses_map, cells_map, template_cell_ids, syn_pre_cell_type, False)
 	# set_stimuls_and_go(config, cells, template_cell_ids, netcons)
 	

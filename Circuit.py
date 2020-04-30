@@ -5,7 +5,6 @@ from neuron import h
 import random
 
 random.seed(13)
-
 ### MPI must be initialized before we create a ParallelContext object
 h.nrnmpi_init()
 pc = h.ParallelContext()
@@ -38,7 +37,7 @@ class Cell(object):
 
 class Circuit(object):
 
-	def __init__(self, config, num_neurons=5, syn_w=0.05, syn_delay=1, save_synapses=False):
+	def __init__(self, config, num_neurons, syn_w=0.05, syn_delay=1, save_synapses=False):
 		self.config = config
 		self.num_neurons = num_neurons
 		self.syn_w = syn_w
@@ -221,7 +220,8 @@ class Circuit(object):
 				else:
 					for syn_id in R_mtype_synapses[mtype]:
 						synapses_map[target_cell_id][syn_id] = 'no-data'
-
+		with open(f'result/synapses_map.json', 'w') as outfile:
+			json.dump(synapses_map, outfile)
 		return synapses_map
 
 	def _connect_cells(self, _create_synapses=True, synapse_json=None):
@@ -229,7 +229,7 @@ class Circuit(object):
 		# print()
 		# print('self.gid_num_pre_syn_mtype[0]=', self.gid_num_pre_syn_mtype[0])
 		synapses_map = self._create_synapses()
-		# exit('---')
+		exit('---')
 		self.log_pre_post_syn = {}
 		for gid_t, target in zip(self.gid_host_list, self.obj_cells):
 			
@@ -241,7 +241,7 @@ class Circuit(object):
 			self.log_pre_post_syn[post_syn_cid]['info_for_target_full'] = _full_log
 
 			print('post_syn:', target, '	num pre_syn:', len(target._synapses.synapse_list), _short_log)
-			
+
 			for syn_id, pre_syn_cid in synapses_map[post_syn_cid].items():
 				if pre_syn_cid == 'no-data':
 					continue
@@ -271,11 +271,25 @@ class Circuit(object):
 		self.l_iclamp = []
 		for gid in self.gid_host_list:
 			if pc.gid_exists(gid):
-				print(f' On host {pc.id()}	gid {gid} exists as {self.gid_cid[gid]}')
+				cell_id = self.gid_cid[gid]
+				print(f' On host {pc.id()}	gid {gid} exists as {cell_id}')
+
+				with open(f'current_amps/{cell_id}.dat', 'r') as current_amps_file:
+					first_line = current_amps_file.read().split('\n')[0].strip()
+					hyp_amp, step_1_2, step_1_3, step_1_4 = first_line.split(' ')
+				hyp_amp = float(hyp_amp)
+				step_1_2 = float(step_1_2)
+
+				amp_firing_threshold = step_1_2 / 1.2
+
 				iclamp = h.IClamp(pc.gid2cell(gid).soma[0](0.5))
 				iclamp.delay = self.config['iclamp_delay']
 				iclamp.dur = self.config['iclamp_dur']
-				iclamp.amp = self.config['iclamp_amp']
+				iclamp.amp = self.config['iclamp_threshold_level']*amp_firing_threshold
 				self.l_iclamp.append(iclamp)
 
-
+				iclamp = h.IClamp(pc.gid2cell(gid).soma[0](0.5))
+				iclamp.delay = 0
+				iclamp.dur = self.config['tstop']
+				iclamp.amp = hyp_amp
+				self.l_iclamp.append(iclamp)

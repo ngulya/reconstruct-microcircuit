@@ -14,6 +14,7 @@ import copy
 import time
 from scipy.spatial import distance
 import random as rnd
+rnd.seed(13)
 
 def get_neurons_path(circuit_folder):
 	l_neuron_folders = []
@@ -54,7 +55,7 @@ def add_new_objects(filename, new_obj):
 			print(line, end='')
 	return changed
 
-def change_axons_settings(filename):
+def keep_axon(filename):
 	first_replace = True
 	with fileinput.FileInput(filename, inplace=True) as file:
 		for line in file:
@@ -68,7 +69,7 @@ def load_neurons_data(d_map=None, axon_use=True, circuit_folders=['MyLayers'], n
 	
 	file_loc = os.path.dirname(os.path.abspath(__file__))
 	
-	for folder in ['synapses', 'morphology', 'biophysics', 'template']:
+	for folder in ['synapses', 'morphology', 'biophysics', 'template', 'current_amps']:
 		shutil.rmtree(folder, ignore_errors=True)
 		os.makedirs(folder, exist_ok=True)
 	shutil.rmtree('mechanisms', ignore_errors=True)
@@ -98,6 +99,10 @@ def load_neurons_data(d_map=None, axon_use=True, circuit_folders=['MyLayers'], n
 			change_template_name(biophysics_hoc_new, biophysic_old_name, biophysic_new_name)
 
 
+			current_amps_old = opj(folder, 'current_amps.dat')
+			current_amps_new = opj('current_amps', f'{cell_id}.dat')
+			shutil.copy(current_amps_old, current_amps_new)
+
 			morphology_old = opj(folder, 'morphology')
 			morphology_new = opj('morphology', cell_id)
 			shutil.copytree(morphology_old, morphology_new)
@@ -118,6 +123,7 @@ def load_neurons_data(d_map=None, axon_use=True, circuit_folders=['MyLayers'], n
 			
 			template_hoc_old = opj(folder, 'template.hoc')
 			template_hoc_new = opj('template', f'{cell_id}.hoc')
+
 			shutil.copy(template_hoc_old, template_hoc_new)
 			change_str_in_hoc(template_hoc_new, 'morphology.hoc', opj(file_loc, morphology_hoc_new))
 			change_str_in_hoc(template_hoc_new, 'biophysics.hoc', opj(file_loc, biophysics_hoc_new))
@@ -130,7 +136,7 @@ def load_neurons_data(d_map=None, axon_use=True, circuit_folders=['MyLayers'], n
 			change_template_name(template_hoc_new, None, cell_id, False)
 			# add_new_objects(template_hoc_new, 'soma_v')
 			if axon_use:
-				change_axons_settings(template_hoc_new)
+				keep_axon(template_hoc_new)
 			if not have_mechanisms:
 				shutil.copytree(opj(folder, 'mechanisms'), 'mechanisms')
 				have_mechanisms = True
@@ -301,7 +307,7 @@ def load_duplicated_neurons_data(d_map, axon_use=False, circuit_folders='AllLaye
 
 	file_loc = os.path.dirname(os.path.abspath(__file__))
 	
-	for folder in ['synapses', 'morphology', 'biophysics', 'template']:
+	for folder in ['synapses', 'morphology', 'biophysics', 'template', 'current_amps']:
 		shutil.rmtree(folder, ignore_errors=True)
 		os.makedirs(folder, exist_ok=True)
 	shutil.rmtree('mechanisms', ignore_errors=True)
@@ -334,6 +340,10 @@ def load_duplicated_neurons_data(d_map, axon_use=False, circuit_folders='AllLaye
 				biophysics_hoc_new = opj('biophysics', f'{cell_id}.hoc')
 				shutil.copy(biophysics_hoc_old, biophysics_hoc_new)
 				change_template_name(biophysics_hoc_new, biophysic_old_name, biophysic_new_name)
+
+				current_amps_old = opj(folder, 'current_amps.dat')
+				current_amps_new = opj('current_amps', f'{cell_id}.dat')
+				shutil.copy(current_amps_old, current_amps_new)
 
 
 				morphology_old = opj(folder, 'morphology')
@@ -369,7 +379,7 @@ def load_duplicated_neurons_data(d_map, axon_use=False, circuit_folders='AllLaye
 				# add_new_objects(template_hoc_new, 'soma_v')
 				
 				if axon_use:
-					change_axons_settings(template_hoc_new)
+					keep_axon(template_hoc_new)
 				
 				if not have_mechanisms:
 					shutil.copytree(opj(folder, 'mechanisms'), 'mechanisms')
@@ -380,13 +390,153 @@ def load_duplicated_neurons_data(d_map, axon_use=False, circuit_folders='AllLaye
 						shutil.copy(opj(folder, 'mechanisms', file), opj('mechanisms', file))
 	return 1
 
+def	get_synapses_pre_mtypes(filename):
+	d_mtype_map, R_d_synapses, d_synapses, d_type_synapses = {}, {}, {}, {}
+
+	with open(os.path.join(filename, 'mtype_map.tsv'), 'r') as fd:
+		mtype_map = fd.read().split('\n')
+		for line in mtype_map:
+			line = line.split('\t')
+			if len(line) > 1:
+				d_mtype_map[int(line[0])] = line[1]
+	
+	d_num_mtypes_synapses = {}
+	with open(os.path.join(filename, 'synapses.tsv'), 'r') as fd:
+		synapses = fd.read().split('\n')
+		for line in synapses[1:]:
+			line = line.split('\t')
+			if len(line) > 1:
+				synapse_id = int(line[0])
+				pre_mtype = int(line[2])
+				#If synapse_type < 100 the synapse is inhibitory, otherwise excitatory
+				syn_pre_type = int(line[6])
+				excitatory = 1
+				if syn_pre_type < 100:
+					excitatory = 0
+				
+				str_mtype = d_mtype_map[pre_mtype]
+				str_mtype = str_mtype.replace('-', '_')
+				d_synapses[synapse_id] = str_mtype
+				
+				R_d_synapses.setdefault(str_mtype, [])
+				R_d_synapses[str_mtype].append(synapse_id)
+
+				d_type_synapses[synapse_id] = excitatory
+
+				d_num_mtypes_synapses.setdefault(str_mtype, 0)
+				d_num_mtypes_synapses[str_mtype] += 1
+	'''
+	synapse_id = [0...100...N]
+
+	d_num_mtypes_synapses[m-type] = 2 	|nums pre_synaptic cell
+	d_synapses[0..N] = 'L1_DAC'.. 		|m-type
+	d_type_synapses[0..N] = 0/1  		|0-inhibitory, 1-excitatory
+	'''
+	return d_num_mtypes_synapses, R_d_synapses, d_synapses, d_type_synapses
+
+
+def get_lists():	
+
+	cid_gid = {}
+	gid_num_pre_syn_mtype, gid_cid, gid_syn_pre_cell_type, gid_R_syn_pre_cell_type = [], [], [], []
+	
+	for _template_paths in os.listdir('template'):
+		if _template_paths.endswith('.hoc'):
+			cell_id = _template_paths.split('.hoc')[0]
+			print(cell_id)
+
+			num_mtypes_synapses, R_mtype_synapses, mtype_synapses, ie_type_synapses = get_synapses_pre_mtypes(opj('synapses', cell_id))
+			'''
+			L4_BP_bAC217_2
+			cid_gid:
+			 {'L4_BP_bAC217_2': 0}
+			gid_cid:
+			 ['L4_BP_bAC217_2']
+			num_mtypes_synapses:
+			 {'L4_PC': 7, 'L4_SP': 2, 'L4_BTC': 3, 'L6_LBC': 2, 'L23_DBC': 3, 'L5_MC': 8, 'L5_NBC': 6}
+			mtype_synapses: as list
+			 {0: 'L4_PC', 1: 'L4_PC', 2: 'L4_SP', 3: 'L4_SP', 4: 'L4_SP', 5: 'L4_SP', .....
+			R_mtype_synapses:
+			 {'L4_PC': [0, 1, 6, 10, 11, 17, 25], 'L4_SP': [2, 3]}....
+			'''
+			
+			cid_gid[cell_id] = len(gid_cid)
+			gid_cid.append(cell_id)
+			gid_syn_pre_cell_type.append(mtype_synapses)
+			gid_R_syn_pre_cell_type.append(R_mtype_synapses)
+			gid_num_pre_syn_mtype.append(num_mtypes_synapses)
+
+	return cid_gid, gid_cid, gid_syn_pre_cell_type, gid_R_syn_pre_cell_type, gid_num_pre_syn_mtype
+
+def has_this_mtype(target_num, mtype, gid_cid):
+	result = []
+	for _target_num in range(len(gid_cid)): 
+		if mtype in gid_cid[_target_num] and _target_num != target_num:
+			result.append(_target_num)
+			
+	return result
+
+def create_synapse_map():
+	#difference num pre post
+	cid_gid, gid_cid, gid_syn_pre_cell_type, gid_R_syn_pre_cell_type, gid_num_pre_syn_mtype = get_lists()
+
+	'''
+	cid_gid:
+	 {'L4_BP_bAC217_2': 0}
+	gid_cid:
+	 ['L4_BP_bAC217_2']
+	gid_num_pre_syn_mtype:
+	[0]{'L4_PC': 7, 'L4_SP': 2, 'L4_BTC': 3, 'L6_LBC': 2, 'L23_DBC': 3, 'L5_MC': 8, 'L5_NBC': 6}
+	gid_syn_pre_cell_type: as list
+	[0]{0: 'L4_PC', 1: 'L4_PC', 2: 'L4_SP', 3: 'L4_SP', 4: 'L4_SP', 5: 'L4_SP', .....
+	gid_R_syn_pre_cell_type:
+	[gid]{'L4_PC': [0, 1, 6, 10, 11, 17, 25], 'L4_SP': [2, 3]}....
+	'''
+	synapses_map = {}
+	for post_syn_num in range(len(gid_cid)):
+		post_syn_cell_id = gid_cid[post_syn_num]
+		pre_syn_mtype_num = gid_num_pre_syn_mtype[post_syn_num]#{'L4_PC': 7, 'L4_SP': 2, 'L4_BTC': 3, 'L6_LBC': 2, 'L23_DBC': 3, 'L5_MC': 8, 'L5_NBC': 6}
+		
+		pre_syn_mtype = gid_syn_pre_cell_type[post_syn_num]#{0: 'L4_PC', 1: 'L4_PC', 2: 'L4_SP', 3: 'L4_SP', 4: 'L4_SP', 5: 'L4_SP', ...
+		R_pre_syn_mtype = gid_R_syn_pre_cell_type[post_syn_num]#{'L4_PC': [0, 1, 6, 10, 11, 17, 25], 'L4_SP': [2, 3]}....
+		
+		synapses_map[post_syn_cell_id] = pre_syn_mtype.copy()#{0: 'L4_PC', 1: 'L4_PC', 2: 'L4_SP', 3: 'L4_SP', 4: 'L4_SP', 5: 'L4_SP', .....
+
+		for mtype, num_synapses in pre_syn_mtype_num.items():
+			available_gid = has_this_mtype(post_syn_num, mtype, gid_cid)
+			num_available = len(available_gid)
+			
+			if num_available:
+				drop = False
+				if num_synapses <= num_available:
+					drop = True
+
+				for syn_id in R_pre_syn_mtype[mtype]:
+					cell_id = random.choice(available_gid)
+					if drop:
+						available_gid.remove(cell_id)
+					synapses_map[post_syn_cell_id][syn_id] = gid_cid[cell_id]
+			else:
+				for syn_id in R_pre_syn_mtype[mtype]:
+					synapses_map[post_syn_cell_id][syn_id] = 'no-data'
+
+	with open(f'result/synapses_map.json', 'w') as outfile:
+		json.dump(synapses_map, outfile)
+	return synapses_map
+
+
+
 if __name__ == '__main__':
 	opj = os.path.join
-	d_map = duplicated_map(multiplier=0.1)
-	load_duplicated_neurons_data(d_map, axon_use=True, circuit_folders='AllLayers')
-	# load_neurons_data(axon_use=False, circuit_folders=['AllLayers/L1'])	
-	# load_neurons_data(axon_use=True, circuit_folders=['AllLayers/L23'], name_cell='L23_SBC_dNAC222_3')
-	print("\n\nExecute this command:\nnrnivmodl mechanisms/")
-
+	# d_map = duplicated_map(multiplier=0.005)
+	# load_duplicated_neurons_data(d_map, axon_use=False, circuit_folders='AllLayers')
 	
+	# load_neurons_data(axon_use=False, circuit_folders=['AllLayers/L1'])
+	# load_neurons_data(axon_use=False, circuit_folders=['MyLayers5'])
+	# load_neurons_data(axon_use=False, circuit_folders=['MyLayers19'])
+	# load_neurons_data(axon_use=False, circuit_folders=['AllLayers/L23'], name_cell='L23_SBC_dNAC222_3')
+	
+	# print("\n\nExecute this command:\nnrnivmodl mechanisms/")
+
+	create_synapse_map()	
 

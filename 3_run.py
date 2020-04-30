@@ -81,7 +81,7 @@ def information_print(CRC):
 						exit(f'error {pre_syn} | info_for_target_full2')
 	
 if __name__ == '__main__':
-	config = {'tstop':150, 'iclamp_delay':0, 'iclamp_dur':30, 'iclamp_amp':0.1}
+	config = {'tstop':10, 'iclamp_delay':100, 'iclamp_dur':700, 'iclamp_threshold_level':1}
 	num_neurons = get_neuron_number()
 
 	CRC = Circuit(config, num_neurons)
@@ -90,7 +90,7 @@ if __name__ == '__main__':
 	pc.set_maxstep(10 * ms)
 
 	t = h.Vector().record(h._ref_t)
-	h.finitialize(-65 * mV)
+	# h.finitialize(-65 * mV)
 	print(f'\nrun №{pc.id()}')# pc.psolve(600 * ms)
 	Elapsed = run_run_run(config['tstop'])
 	# time.sleep(pc.id()*2)
