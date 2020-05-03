@@ -265,6 +265,38 @@ def get_new_statistics(mtype, etype, MEtype):
 			newetype[_e] += _n
 	return newmtype, newetype
 
+def get_inh_exi():
+	global should_mtypes
+	inhib = {}
+	excit = {}
+	for t in should_mtypes:
+		inhib[t] = 0
+		excit[t] = 0
+	
+	with open('BBPjson/pathways_physiology_factsheets_simplified.json', 'r') as fd:
+		pathways = json.load(fd)
+
+	for k, v in pathways.items():
+		cell = k.split(':')[0].replace('-', '_')
+		if v['synapse_type'].find('Inhibitory') >= 0:
+			inhib[cell] += 1
+		else:
+			excit[cell] += 1
+
+	for k in should_mtypes:
+		if inhib[k] > excit[k]:
+			inhib[k] = 1
+			excit[k] = 0
+		else:
+			inhib[k] = 0
+			excit[k] = 1
+
+	for k in should_mtypes:
+		if inhib[k] == 1:
+			print(k, 'inh')
+		else:
+			print(k, 'exc')
+	return inhib, excit
 
 def duplicated_map(multiplier, json_folder='BBPjson', folder_layers='AllLayers'):
 	'''
@@ -318,7 +350,7 @@ def load_duplicated_neurons_data(d_map, axon_use=False, circuit_folders='AllLaye
 		for basic_cell_id, nums in d_map[layer].items():
 			print(basic_cell_id, nums)
 			for _num_cpy in range(nums):
-
+				# pfx = postfixs[3]
 				if _num_cpy < 5:
 					pfx = postfixs[_num_cpy]
 				else:
@@ -440,10 +472,11 @@ def get_lists():
 	cid_gid = {}
 	gid_num_pre_syn_mtype, gid_cid, gid_syn_pre_cell_type, gid_R_syn_pre_cell_type = [], [], [], []
 	
-	for _template_paths in os.listdir('template'):
+	ll = len(os.listdir('template'))
+	for _asf, _template_paths in enumerate(os.listdir('template')):
 		if _template_paths.endswith('.hoc'):
 			cell_id = _template_paths.split('.hoc')[0]
-			print(cell_id)
+			print(ll-_asf, cell_id)
 
 			num_mtypes_synapses, R_mtype_synapses, mtype_synapses, ie_type_synapses = get_synapses_pre_mtypes(opj('synapses', cell_id))
 			'''
@@ -468,16 +501,44 @@ def get_lists():
 
 	return cid_gid, gid_cid, gid_syn_pre_cell_type, gid_R_syn_pre_cell_type, gid_num_pre_syn_mtype
 
-def has_this_mtype(target_num, mtype, gid_cid):
+def has_this_mtype(gid_cid, target_num, pre_syn_mtype, should_be_mtypes, pre_syn_cell_ids_available):
+	tmp = []
 	result = []
 	for _target_num in range(len(gid_cid)): 
-		if mtype in gid_cid[_target_num] and _target_num != target_num:
-			result.append(_target_num)
-			
+		if pre_syn_mtype in gid_cid[_target_num] and _target_num != target_num:
+			tmp.append(_target_num)
+	
+	for i in range(should_be_mtypes):
+		result.append(rnd.choice(tmp))
 	return result
 
-def create_synapse_map():
+def has_this_mtype_z3(post_syn_cell_id, cid_gid, should_be_mtypes, pre_syn_cell_ids_available):
+
+	if post_syn_cell_id in pre_syn_cell_ids_available:
+		del pre_syn_cell_ids_available[post_syn_cell_id]
+	result = []
+	for i in range(should_be_mtypes):
+		maxx = None
+		pre_syn_cell_id = None
+		for _pre_syn_cell_id, nums_left in pre_syn_cell_ids_available.items():
+			if maxx is None or maxx < nums_left:
+				maxx = nums_left
+				pre_syn_cell_id = _pre_syn_cell_id
+		if maxx is None:
+			break
+		del pre_syn_cell_ids_available[pre_syn_cell_id]
+		result.append(cid_gid[pre_syn_cell_id])
+	return result
+
+def get_mtype(cell_id, inhib):
+	for k, v in inhib.items():
+		if cell_id.startswith(k):
+			return k, v
+	exit(f'no type for {cell_id}')
+
+def create_synapse_map(Mpost_syn_nums, Mpre_syn_nums):
 	#difference num pre post
+	inhib, excit = get_inh_exi()
 	cid_gid, gid_cid, gid_syn_pre_cell_type, gid_R_syn_pre_cell_type, gid_num_pre_syn_mtype = get_lists()
 
 	'''
@@ -492,51 +553,103 @@ def create_synapse_map():
 	gid_R_syn_pre_cell_type:
 	[gid]{'L4_PC': [0, 1, 6, 10, 11, 17, 25], 'L4_SP': [2, 3]}....
 	'''
+	with open('BBPjson/pathways_anatomy_factsheets_simplified.json', 'r') as fd:
+		anatomy = json.load(fd)
+	print('\n\n\n\n\n')
 	synapses_map = {}
-	for post_syn_num in range(len(gid_cid)):
+	used_Mpost_syn_nums = {}
+	for cell_id in gid_cid:
+		m_type, _ = get_mtype(cell_id, inhib)
+		used_Mpost_syn_nums.setdefault(m_type, {})
+		used_Mpost_syn_nums[m_type][cell_id] = int(Mpost_syn_nums[m_type])
+	#used_Mpost_syn_nums -> {'L1_DAC':{'L1_DAC_cUdf_13':100, 'L1_DAC_cUdf_113':100}}
+	ll = len(gid_cid)
+	for _i, post_syn_num in enumerate(range(ll)):
 		post_syn_cell_id = gid_cid[post_syn_num]
-		pre_syn_mtype_num = gid_num_pre_syn_mtype[post_syn_num]#{'L4_PC': 7, 'L4_SP': 2, 'L4_BTC': 3, 'L6_LBC': 2, 'L23_DBC': 3, 'L5_MC': 8, 'L5_NBC': 6}
-		
-		pre_syn_mtype = gid_syn_pre_cell_type[post_syn_num]#{0: 'L4_PC', 1: 'L4_PC', 2: 'L4_SP', 3: 'L4_SP', 4: 'L4_SP', 5: 'L4_SP', ...
-		R_pre_syn_mtype = gid_R_syn_pre_cell_type[post_syn_num]#{'L4_PC': [0, 1, 6, 10, 11, 17, 25], 'L4_SP': [2, 3]}....
-		
-		synapses_map[post_syn_cell_id] = pre_syn_mtype.copy()#{0: 'L4_PC', 1: 'L4_PC', 2: 'L4_SP', 3: 'L4_SP', 4: 'L4_SP', 5: 'L4_SP', .....
+		print(ll-_i, post_syn_cell_id)
+		# if post_syn_cell_id != 'L23_PC_cADpyr229_5_dplc_8':
+		# 	continue
+		post_syn_mtype, this_inhib = get_mtype(post_syn_cell_id, inhib)
 
-		for mtype, num_synapses in pre_syn_mtype_num.items():
-			available_gid = has_this_mtype(post_syn_num, mtype, gid_cid)
+		pre_syn_mtype_num = gid_num_pre_syn_mtype[post_syn_num].copy()#{'L4_PC': 7, 'L4_SP': 2, 'L4_BTC': 3, 'L6_LBC': 2, 'L23_DBC': 3, 'L5_MC': 8, 'L5_NBC': 6}
+		R_pre_syn_mtype = gid_R_syn_pre_cell_type[post_syn_num].copy()#{'L4_PC': [0, 1, 6, 10, 11, 17, 25], 'L4_SP': [2, 3]}....
+
+		synapses_map[post_syn_cell_id] = gid_syn_pre_cell_type[post_syn_num].copy()#{0: 'L4_PC', 1: 'L4_PC', 2: 'L4_SP', 3: 'L4_SP', 4: 'L4_SP', 5: 'L4_SP', .....
+
+		synaptic_connections = sum(pre_syn_mtype_num.values())
+		pre_syn_uniq_cell = Mpre_syn_nums[post_syn_mtype]
+
+		map_pre_syn_uniq_cell = pre_syn_mtype_num.copy()
+		if pre_syn_uniq_cell < synaptic_connections:
+			for pre_syn_mtype, num_synapses in pre_syn_mtype_num.items():####z1
+				_pre_syn_mtype = pre_syn_mtype
+				if pre_syn_mtype in ['L1_NGC_DA', 'L1_NGC_SA']:
+					_pre_syn_mtype = pre_syn_mtype.split('_')
+					_pre_syn_mtype = _pre_syn_mtype[0] + '_' + _pre_syn_mtype[1] + '-' + _pre_syn_mtype[2]
+				_post_syn_mtype = post_syn_mtype
+				if post_syn_mtype in ['L1_NGC_DA', 'L1_NGC_SA']:
+					_post_syn_mtype = post_syn_mtype.split('_')
+					_post_syn_mtype = _post_syn_mtype[0] + '_' + _post_syn_mtype[1] + '-' + _post_syn_mtype[2]
+				name = _pre_syn_mtype+':'+_post_syn_mtype
+				if name in anatomy:
+					mean_number_of_synapse_per_connection = anatomy[name]['mean_number_of_synapse_per_connection']
+				else:
+					mean_number_of_synapse_per_connection = 1
+				map_pre_syn_uniq_cell[pre_syn_mtype] = max([1, int(num_synapses/mean_number_of_synapse_per_connection)])
+
+			kof = pre_syn_uniq_cell/sum(map_pre_syn_uniq_cell.values())####z2
+			map_pre_syn_uniq_cell = {k:max([1, int(v*kof)]) for k, v in map_pre_syn_uniq_cell.items()}
+			##{'L4_PC': 1, 'L4_SP': 1, 'L4_BTC': 3, 'L6_LBC': 1, 'L23_DBC': 1, 'L5_MC': 2, 'L5_NBC': 1}#cells
+		for pre_syn_mtype, num_synapses in pre_syn_mtype_num.items():#{'L4_PC': 7, 'L4_SP': 2, 'L4_BTC': 3, 'L6_LBC': 2, 'L23_DBC': 3, 'L5_MC': 8, 'L5_NBC': 6}
+			# available_gid = has_this_mtype(gid_cid, post_syn_num, pre_syn_mtype, map_pre_syn_uniq_cell[pre_syn_mtype], used_Mpost_syn_nums[pre_syn_mtype].copy())
+			# print(post_syn_cell_id, pre_syn_mtype)
+			available_gid = has_this_mtype_z3(post_syn_cell_id, cid_gid, map_pre_syn_uniq_cell[pre_syn_mtype], used_Mpost_syn_nums[pre_syn_mtype].copy())
 			num_available = len(available_gid)
-			
+
 			if num_available:
 				drop = False
 				if num_synapses <= num_available:
 					drop = True
-
-				for syn_id in R_pre_syn_mtype[mtype]:
-					cell_id = random.choice(available_gid)
+				used_cell_ids = {}
+				for syn_id in R_pre_syn_mtype[pre_syn_mtype]:
+					# print(drop, post_syn_mtype)
+					cell_id = rnd.choice(available_gid)
 					if drop:
 						available_gid.remove(cell_id)
+					used_cell_ids[gid_cid[cell_id]] = 0
 					synapses_map[post_syn_cell_id][syn_id] = gid_cid[cell_id]
+				for used in used_cell_ids:
+					used_Mpost_syn_nums[pre_syn_mtype][used] -= 1
 			else:
-				for syn_id in R_pre_syn_mtype[mtype]:
+				for syn_id in R_pre_syn_mtype[pre_syn_mtype]:
 					synapses_map[post_syn_cell_id][syn_id] = 'no-data'
-
+					exit('-')
 	with open(f'result/synapses_map.json', 'w') as outfile:
 		json.dump(synapses_map, outfile)
+	with open(f'result/used_Mpost_syn_nums.json', 'w') as outfile:
+		json.dump(used_Mpost_syn_nums, outfile)
 	return synapses_map
 
 
 
 if __name__ == '__main__':
+	should_mtypes = ['L1_DAC','L1_NGC_DA','L1_NGC_SA','L1_HAC','L1_DLAC','L1_SLAC','L23_PC','L23_MC','L23_BTC','L23_DBC','L23_BP','L23_NGC','L23_LBC','L23_NBC','L23_SBC','L23_ChC','L4_PC','L4_SP','L4_SS','L4_MC','L4_BTC','L4_DBC','L4_BP','L4_NGC','L4_LBC','L4_NBC','L4_SBC','L4_ChC','L5_TTPC1','L5_TTPC2','L5_UTPC','L5_STPC','L5_MC','L5_BTC','L5_DBC','L5_BP','L5_NGC','L5_LBC','L5_NBC','L5_SBC','L5_ChC','L6_TPC_L1','L6_TPC_L4','L6_UTPC','L6_IPC','L6_BPC','L6_MC','L6_BTC','L6_DBC','L6_BP','L6_NGC','L6_LBC','L6_NBC','L6_SBC','L6_ChC']
 	opj = os.path.join
-	# d_map = duplicated_map(multiplier=0.005)
+	# d_map = duplicated_map(multiplier=0.15)
 	# load_duplicated_neurons_data(d_map, axon_use=False, circuit_folders='AllLayers')
-	
+
 	# load_neurons_data(axon_use=False, circuit_folders=['AllLayers/L1'])
+	# load_neurons_data(axon_use=False, circuit_folders=['MyLayers1'])
 	# load_neurons_data(axon_use=False, circuit_folders=['MyLayers5'])
 	# load_neurons_data(axon_use=False, circuit_folders=['MyLayers19'])
 	# load_neurons_data(axon_use=False, circuit_folders=['AllLayers/L23'], name_cell='L23_SBC_dNAC222_3')
 	
 	# print("\n\nExecute this command:\nnrnivmodl mechanisms/")
-
-	create_synapse_map()	
+	with open('../Connectome/Mpost_syn.json', 'r') as outfile:
+		Mpost_syn_nums = json.load(outfile)
+	with open('../Connectome/Mpre_syn.json', 'r') as outfile:
+		Mpre_syn_nums = json.load(outfile)
+	Mpre_syn_nums = {k.replace('-','_'):v for k, v in Mpre_syn_nums.items()}
+	Mpost_syn_nums = {k.replace('-','_'):v for k, v in Mpost_syn_nums.items()}
+	create_synapse_map(Mpost_syn_nums, Mpre_syn_nums)	
 
