@@ -3,7 +3,6 @@ To run code, take some steps
 ```
 python3 1_prepare_data.py
 nrnivmodl mechanisms/
-nrniv 2_check_data.py
-mpiexec -n 3 nrniv 3_run.py
-python3 4_plot.py
+mpiexec -n 4 nrniv 2_run.py
+python3 3_plot.py
 ```

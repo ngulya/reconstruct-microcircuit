@@ -45,7 +45,7 @@ class Circuit(object):
 		self._get_lists(save_synapses)
 		self._set_gids()### assign gids to processors
 		self._load_cells()
-		self._connect_cells()
+		self._connect_cells(False)#created in prepare data
 		self._set_stimuls()
 
 	def _get_synapses_pre_mtypes(self, filename):
@@ -224,12 +224,13 @@ class Circuit(object):
 			json.dump(synapses_map, outfile)
 		return synapses_map
 
-	def _connect_cells(self, _create_synapses=True, synapse_json=None):
-		# print('self.gid_cid[]=', self.gid_cid)
-		# print()
-		# print('self.gid_num_pre_syn_mtype[0]=', self.gid_num_pre_syn_mtype[0])
-		synapses_map = self._create_synapses()
-		exit('---')
+	def _connect_cells(self, _create_synapses=True):
+		if _create_synapses:
+			synapses_map = self._create_synapses()
+		else:
+			with open('result/synapses_map.json', 'r') as outfile:
+				synapses_map = json.load(outfile)
+
 		self.log_pre_post_syn = {}
 		for gid_t, target in zip(self.gid_host_list, self.obj_cells):
 			
@@ -245,7 +246,7 @@ class Circuit(object):
 			for syn_id, pre_syn_cid in synapses_map[post_syn_cid].items():
 				if pre_syn_cid == 'no-data':
 					continue
-				synapse = target._synapses.synapse_list[syn_id]
+				synapse = target._synapses.synapse_list[int(syn_id)]
 				could_be_pre_syn = self.gid_syn_pre_cell_type[gid_t][int(synapse.synapseID)]
 				if not could_be_pre_syn in pre_syn_cid:
 					exit(f'Synapses Error {could_be_pre_syn} != {pre_syn_cid}')
@@ -263,11 +264,6 @@ class Circuit(object):
 		return 1
 
 	def _set_stimuls(self):
-		# if pc.gid_exists(3):
-		# 	self.iclamp = h.IClamp(pc.gid2cell(3).soma[0](0.5))
-		# 	self.iclamp.delay = 100
-		# 	self.iclamp.dur = 300
-		# 	self.iclamp.amp = 0.1
 		self.l_iclamp = []
 		for gid in self.gid_host_list:
 			if pc.gid_exists(gid):
