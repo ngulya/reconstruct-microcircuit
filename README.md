@@ -7,3 +7,5 @@ nrnivmodl mechanisms/
 mpiexec -n 4 nrniv 2_run.py
 python3 3_plot.py
 ```
+
+Simulation results are available in the results.pdf
