@@ -5,7 +5,9 @@ import time
 import json
 import numpy
 import os
-# mpiexec -n 8 --use-hwthread-cpus -hostfile hostfile nrniv 3_run.py
+# mpiexec -n 8 --use-hwthread-cpus -hostfile hostfile nrniv 2_run.py
+# mpiexec -n 8 --use-hwthread-cpus nrniv 2_run.py
+# mpiexec -n 5 nrniv 2_run.py
 	
 def run_run_run(tstop, CRC, t, pc):
 	print(f'\nRunning for {tstop} ms')
@@ -52,13 +54,15 @@ def get_neuron_number(folder='template'):
 
 def information_print(CRC):
 	log_pre_post_syn = CRC.log_pre_post_syn
-	
+	with open(f'result/log_{pc.id()}.json', 'w') as outfile:
+		json.dump(CRC.log_pre_post_syn, outfile)
 	for post_syn, d in log_pre_post_syn.items():
 		info_for_target_full = log_pre_post_syn[post_syn]['info_for_target_full']
 		
 		# print(post_syn, info_for_target_full)
 		target_num = CRC.cid_gid[post_syn]
 		need_pre_syn_mtype = sum(info_for_target_full.values())
+		#need_pre_syn_mtype = {'L1_HAC':13, 'L23_PC':43} number synaptic connection with this mtype
 		info_for_target_full2 = {}
 		for mtype, num_synapses in info_for_target_full.items():
 			available = CRC._has_this_mtype(target_num, mtype)
@@ -68,6 +72,16 @@ def information_print(CRC):
 				info_for_target_full2[mtype] = False
 
 		FLAG=False
+		# print(log_pre_post_syn[post_syn])
+
+		# num_pre_syn_connection_now = sum(log_pre_post_syn[post_syn].values())
+		num_pre_syn_connection_now = sum(_v for _k, _v in d.items() if not _k.startswith('info_for_target'))
+		num_pre_syn_connection_should = need_pre_syn_mtype
+		if num_pre_syn_connection_now == num_pre_syn_connection_should:
+			print(f'OK with nums num_pre_syn_connection_now:{num_pre_syn_connection_now} == {num_pre_syn_connection_should}:num_pre_syn_connection_should')
+		else:
+			print(f'not OK with nums num_pre_syn_connection_now:{num_pre_syn_connection_now} != {num_pre_syn_connection_should}:num_pre_syn_connection_should')
+
 		for pre_syn, nums in log_pre_post_syn[post_syn].items():
 			if pre_syn in ['info_for_target_full', 'info_for_target']:
 				continue
@@ -116,7 +130,10 @@ def saving(CRC, t, pc, ttt):
 	print(f'result/host_{pc.id()}.json 	{ttt}')
 
 if __name__ == '__main__':
-	tstop = 1000
+	#mpiexec -n 4 nrniv 2_run.py
+	# tstop = 3300
+	tstop = 330
+	# tstop = 160
 	config = {'tstop':tstop, 'iclamp_delay':130, 'iclamp_dur':tstop, 'iclamp_threshold_level':1}
 	num_neurons = get_neuron_number()
 
